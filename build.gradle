@@ -25,16 +25,35 @@ repositories {
 }
 
 dependencies {
+    // Spring Data JPA: ORM, DB 연동
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // Spring Security: 인증/인가
     implementation 'org.springframework.boot:spring-boot-starter-security'
+    // Spring Web: REST API, MVC
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    // Validation: 입력값 검증
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // Actuator: 모니터링 및 관리
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // Lombok: 보일러플레이트 코드 제거 (컴파일 타임)
     compileOnly 'org.projectlombok:lombok'
+    // 개발 편의 기능 (Hot reload 등)
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    // PostgreSQL: 데이터베이스 드라이버 (런타임)
     runtimeOnly 'org.postgresql:postgresql'
+    // Spring Configuration Processor: @ConfigurationProperties 지원
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    // Lombok Annotation Processor: 롬복 어노테이션 처리
     annotationProcessor 'org.projectlombok:lombok'
+    // Lombok (테스트 컴파일 타임)
+    testCompileOnly 'org.projectlombok:lombok'
+    // Lombok Annotation Processor (테스트)
+    testAnnotationProcessor 'org.projectlombok:lombok'
+    // Spring Test: 테스트 지원
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // Spring Security Test: 시큐리티 테스트 지원
     testImplementation 'org.springframework.security:spring-security-test'
+    // JUnit Platform Launcher: 테스트 런타임
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
