@@ -55,6 +55,10 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     // JUnit Platform Launcher: 테스트 런타임
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // AssertJ
+    testImplementation 'org.assertj:assertj-core:3.26.0'
+    // h2database
+    testImplementation 'com.h2database:h2'
 }
 
 tasks.named('test') {
