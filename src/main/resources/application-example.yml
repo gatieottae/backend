@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: gatieottae
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/gatieottae   # DB URL (환경에 맞게 수정)
+    username: your-username                            # DB 사용자명
+    password: your-password                            # DB 비밀번호
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # 개발 초반엔 update, 이후 validate 권장
+    properties:
+      hibernate:
+        # default_schema: gatieottae   # 필요 시 스키마 지정
+        format_sql: true
+        jdbc.time_zone: Asia/Seoul
+    show-sql: true   # 실행 SQL 출력 여부
+
+  jackson:
+    time-zone: Asia/Seoul
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+        exclude: env,beans
