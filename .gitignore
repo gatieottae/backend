@@ -1,0 +1,61 @@
+HELP.md
+
+### Build ###
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Java ###
+*.class
+*.log
+*.ctxt
+hs_err_pid*
+
+### Spring Boot ###
+# 로컬 환경별 properties/yml은 제외 (보안)
+application-*.yml
+application-*.properties
+
+### Logs ###
+*.log
+logs/
+log/
+*.out
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### 기타 ###
+/bin/
+/tmp/
+/*.swp
