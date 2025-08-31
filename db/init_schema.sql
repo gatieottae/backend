@@ -1,15 +1,59 @@
 CREATE SCHEMA IF NOT EXISTS gatieottae;
 SET search_path TO gatieottae;
 
--- Member table
-CREATE TABLE member (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    nickname VARCHAR(64) NOT NULL,
-    profile_image_url VARCHAR(512),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+
+-- Member status enum type (create if not exists)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'member_status') THEN
+        CREATE TYPE gatieottae.member_status AS ENUM ('ACTIVE','BLOCKED','DELETED');
+    END IF;
+END$$;
+
+
+-- Member table (email optional, password-based signup supported)
+CREATE TABLE IF NOT EXISTS member (
+    id                BIGSERIAL PRIMARY KEY,
+    username          VARCHAR(50)  NOT NULL,                 -- 로그인 아이디(필수)
+    password_hash     VARCHAR(255) NOT NULL,                 -- 비밀번호 해시(필수)
+    email             VARCHAR(255),                          -- 선택
+    name              VARCHAR(50)  NOT NULL,                 -- 실명/표시 이름
+    nickname          VARCHAR(50),                           -- 닉네임(선택)
+    profile_image_url TEXT,
+    status            member_status NOT NULL DEFAULT 'ACTIVE',
+    oauth_provider    VARCHAR(20),                           -- 예: 'KAKAO'
+    oauth_subject     VARCHAR(100),                          -- 예: 카카오 user id
+    last_login_at     TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 3) 제약/인덱스
+-- username은 반드시 유니크
+CREATE UNIQUE INDEX IF NOT EXISTS ux_member_username ON member (username);
+
+-- email은 값이 있을 때만 유니크(여러 NULL 허용)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_member_email_notnull
+  ON member (email) WHERE email IS NOT NULL;
+
+-- 소셜 계정 맵핑은 (provider, subject) 조합이 있을 때만 유니크
+CREATE UNIQUE INDEX IF NOT EXISTS ux_member_oauth_notnull
+  ON member (oauth_provider, oauth_subject)
+  WHERE oauth_provider IS NOT NULL AND oauth_subject IS NOT NULL;
+
+-- 4) updated_at 자동 갱신
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_member_set_updated_at ON member;
+CREATE TRIGGER trg_member_set_updated_at
+BEFORE UPDATE ON member
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Auth Provider table
 CREATE TABLE auth_provider (
