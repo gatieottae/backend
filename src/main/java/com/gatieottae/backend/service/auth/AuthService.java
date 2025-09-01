@@ -1,6 +1,8 @@
 package com.gatieottae.backend.service.auth;
 
 import com.gatieottae.backend.api.auth.dto.SignupDto;
+import com.gatieottae.backend.common.exception.ConflictException;
+import com.gatieottae.backend.common.exception.ErrorCode;
 import com.gatieottae.backend.domain.member.Member;
 import com.gatieottae.backend.repository.member.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -50,10 +52,10 @@ public class AuthService {
 
         // 2) 중복 검증 (username은 필수, email은 값 있을 때만)
         if (memberRepository.existsByUsername(username)) {
-            throw new IllegalArgumentException("이미 사용 중인 username 입니다.");
+            throw new ConflictException(ErrorCode.DUPLICATE_USERNAME, "이미 사용 중인 username 입니다.");
         }
         if (StringUtils.hasText(email) && memberRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("이미 사용 중인 email 입니다.");
+            throw new ConflictException(ErrorCode.DUPLICATE_EMAIL, "이미 사용 중인 email 입니다.");
         }
 
         // 3) 비밀번호 해시(BCrypt)
