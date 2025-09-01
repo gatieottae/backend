@@ -1,4 +1,3 @@
-// src/test/java/com/gatieottae/backend/api/auth/controller/AuthControllerTest.java
 package com.gatieottae.backend.api.auth.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
