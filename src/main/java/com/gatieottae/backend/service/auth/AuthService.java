@@ -123,6 +123,46 @@ public class AuthService {
                 .build();
     }
 
+    /**
+     * 토큰 재발급 유스케이스
+     * 1) refreshToken 유효성 검증 (시그니처/만료 확인)
+     * 2) refreshToken에서 subject(username)와 memberId 추출
+     * 3) DB에서 사용자 조회 → 상태 확인
+     * 4) 새 accessToken 발급 (refreshToken은 그대로 반환)
+     */
+    public LoginDto.LoginResponse refresh(String refreshToken) {
+        // 1) refreshToken 유효성 검증
+        if (!jwtTokenProvider.validate(refreshToken)) {
+            throw new BadRequestException(ErrorCode.UNAUTHORIZED, "유효하지 않은 refreshToken 입니다.");
+        }
+
+        // 2) refreshToken에서 username, memberId 추출
+        String username = jwtTokenProvider.getUsername(refreshToken);
+        Long memberId   = jwtTokenProvider.getMemberId(refreshToken);
+
+        // 3) 사용자 조회 + 상태 확인
+        Member m = memberRepository.findById(memberId)
+                .orElseThrow(() -> new BadRequestException(ErrorCode.UNAUTHORIZED, "사용자를 찾을 수 없습니다."));
+
+        if (!m.getUsername().equals(username)) {
+            // 토큰의 username과 DB 불일치 → 위조 가능성
+            throw new BadRequestException(ErrorCode.UNAUTHORIZED, "토큰 정보가 올바르지 않습니다.");
+        }
+
+        if (m.getStatus() != MemberStatus.ACTIVE) {
+            throw new ConflictException(ErrorCode.FORBIDDEN, "비활성화된 사용자입니다.");
+        }
+
+        // 4) 새 Access Token 발급
+        String newAccessToken = jwtTokenProvider.generateAccessToken(m.getUsername(), m.getId());
+
+        return LoginDto.LoginResponse.builder()
+                .tokenType("Bearer")
+                .accessToken(newAccessToken)
+                .refreshToken(refreshToken) // refreshToken은 그대로 반환
+                .build();
+    }
+
     /* -------------------- 내부 유틸 -------------------- */
 
     private String trim(String s) {
