@@ -44,6 +44,7 @@ hs_err_pid*
 # 로컬 환경별 properties/yml은 제외 (보안)
 application-*.yml
 application-*.properties
+!application-example.yml
 
 ### Logs ###
 *.log
