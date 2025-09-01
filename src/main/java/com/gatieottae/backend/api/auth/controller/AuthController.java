@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
+import com.gatieottae.backend.api.auth.dto.RefreshDto;
 
 @Tag(name = "Auth", description = "인증/회원가입/로그인 API")
 @RestController
@@ -56,5 +57,31 @@ public class AuthController {
     ) {
         var res = authService.login(request);
         return ResponseEntity.ok(res);
+    }
+
+    @Operation(
+            summary = "토큰 재발급",
+            description = "유효한 refreshToken으로 새 accessToken을 발급합니다. (v1: refresh 회전 없음)"
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "재발급 성공",
+            content = @Content(schema = @Schema(implementation = RefreshDto.RefreshResponse.class))
+    )
+    @ApiResponse(responseCode = "401", description = "refreshToken 만료/위조 또는 사용자 불일치")
+    @ApiResponse(responseCode = "403", description = "사용자 상태 비활성/정지 등")
+    @PostMapping(value = "/refresh", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<RefreshDto.RefreshResponse> refresh(
+            @Valid @RequestBody RefreshDto.RefreshRequest request
+    ) {
+        // 서비스에서 검증/조회/상태 체크 후 새 Access 발급 (Refresh는 v1에서 회전하지 않음)
+        LoginDto.LoginResponse svc = authService.refresh(request.getRefreshToken());
+
+        // 컨트롤러 응답 스펙(RefreshDto)으로 변환
+        RefreshDto.RefreshResponse body = RefreshDto.RefreshResponse.of(
+                svc.getAccessToken(),
+                svc.getRefreshToken()
+        );
+        return ResponseEntity.ok(body);
     }
 }
