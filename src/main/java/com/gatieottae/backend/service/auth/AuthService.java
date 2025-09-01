@@ -1,15 +1,19 @@
 package com.gatieottae.backend.service.auth;
 
+import com.gatieottae.backend.api.auth.dto.LoginDto;
 import com.gatieottae.backend.api.auth.dto.SignupDto;
 import com.gatieottae.backend.common.exception.ConflictException;
 import com.gatieottae.backend.common.exception.ErrorCode;
 import com.gatieottae.backend.domain.member.Member;
 import com.gatieottae.backend.repository.member.MemberRepository;
+import com.gatieottae.backend.security.jwt.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import com.gatieottae.backend.common.exception.BadRequestException;
+import com.gatieottae.backend.domain.member.MemberStatus;
 
 /**
  * 인증 관련 쓰기(use-case) 서비스
@@ -32,6 +36,7 @@ public class AuthService {
 
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder; // SecurityConfig에 @Bean 등록됨
+    private final JwtTokenProvider jwtTokenProvider; // JWT 발급/검증 유틸
 
     /**
      * 회원가입 유스케이스
@@ -75,6 +80,47 @@ public class AuthService {
 
         // 6) 응답 DTO로 변환 (민감정보 제외)
         return SignupDto.SignupResponse.from(saved);
+    }
+
+    /**
+     * 로그인 유스케이스
+     * 1) username 정규화/조회
+     * 2) 계정 상태 확인 (ACTIVE만 허용)
+     * 3) 비밀번호(BCrypt) 검증
+     * 4) access/refresh 발급 후 응답 DTO 반환
+     *
+     * 보안상 이유로 "아이디/비번 중 무엇이 틀렸는지"는 구체적으로 말하지 않는다.
+     */
+    public LoginDto.LoginResponse login(LoginDto.LoginRequest req) {
+        final String username = trim(req.getUsername());
+        final String rawPw    = req.getPassword();
+
+        // 1) 사용자 조회 (존재하지 않으면 동일한 에러로 응답)
+        Member m = memberRepository.findByUsername(username)
+                .orElseThrow(() -> new BadRequestException(
+                        ErrorCode.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."));
+
+        // 2) 계정 상태 체크 (비활성/차단 등)
+        if (m.getStatus() != MemberStatus.ACTIVE) {
+            // 상태 이슈는 403으로 내려가도록 FORBIDDEN 코드 사용
+            throw new ConflictException(ErrorCode.FORBIDDEN, "비활성화된 사용자입니다.");
+        }
+
+        // 3) 비밀번호 검증(BCrypt)
+        if (!passwordEncoder.matches(rawPw, m.getPasswordHash())) {
+            throw new BadRequestException(
+                    ErrorCode.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
+
+        // 4) JWT 발급
+        String accessToken  = jwtTokenProvider.generateAccessToken(m.getUsername(), m.getId());
+        String refreshToken = jwtTokenProvider.generateRefreshToken(m.getUsername(), m.getId());
+
+        return LoginDto.LoginResponse.builder()
+                .tokenType("Bearer")
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .build();
     }
 
     /* -------------------- 내부 유틸 -------------------- */

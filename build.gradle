@@ -35,32 +35,29 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     // Actuator: 모니터링 및 관리
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    // Swagger
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+    // Swagger/OpenAPI UI
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
     // Lombok: 보일러플레이트 코드 제거 (컴파일 타임)
     compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
     // 개발 편의 기능 (Hot reload 등)
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     // PostgreSQL: 데이터베이스 드라이버 (런타임)
     runtimeOnly 'org.postgresql:postgresql'
-    // Spring Configuration Processor: @ConfigurationProperties 지원
-    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
-    // Lombok Annotation Processor: 롬복 어노테이션 처리
-    annotationProcessor 'org.projectlombok:lombok'
-    // Lombok (테스트 컴파일 타임)
-    testCompileOnly 'org.projectlombok:lombok'
-    // Lombok Annotation Processor (테스트)
-    testAnnotationProcessor 'org.projectlombok:lombok'
-    // Spring Test: 테스트 지원
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    // Spring Security Test: 시큐리티 테스트 지원
-    testImplementation 'org.springframework.security:spring-security-test'
-    // JUnit Platform Launcher: 테스트 런타임
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    // AssertJ
-    testImplementation 'org.assertj:assertj-core:3.26.0'
-    // h2database
-    testImplementation 'com.h2database:h2'
+
+    // JWT 관련 라이브러리
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'       // JWT API
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'         // JWT 실제 구현체
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'      // JWT JSON 직렬화/역직렬화
+
+    // 테스트 관련
+    testImplementation 'org.springframework.boot:spring-boot-starter-test' // Spring Test
+    testImplementation 'org.springframework.security:spring-security-test' // Spring Security Test
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'            // JUnit 런타임
+    testImplementation 'org.assertj:assertj-core:3.26.0'                   // AssertJ
+    testImplementation 'com.h2database:h2'                                  // H2 인메모리 DB
 }
 
 tasks.named('test') {
