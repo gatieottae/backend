@@ -1,5 +1,6 @@
 package com.gatieottae.backend.api.auth.controller;
 
+import com.gatieottae.backend.api.auth.dto.LoginDto;
 import com.gatieottae.backend.api.auth.dto.SignupDto;
 import com.gatieottae.backend.service.auth.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,5 +40,21 @@ public class AuthController {
         return ResponseEntity.created(
                 uriBuilder.path("/api/members/{id}").buildAndExpand(res.getId()).toUri()
         ).body(res);
+    }
+
+    @Operation(
+            summary = "로그인",
+            description = "username/password 로그인 성공 시 access/refresh 토큰을 발급합니다."
+    )
+    @ApiResponse(responseCode = "200", description = "로그인 성공",
+            content = @Content(schema = @Schema(implementation = LoginDto.LoginResponse.class)))
+    @ApiResponse(responseCode = "400", description = "검증 실패")
+    @ApiResponse(responseCode = "401", description = "인증 실패 (없는 사용자/비밀번호 불일치)")
+    @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<LoginDto.LoginResponse> login(
+            @Valid @RequestBody LoginDto.LoginRequest request
+    ) {
+        var res = authService.login(request);
+        return ResponseEntity.ok(res);
     }
 }
