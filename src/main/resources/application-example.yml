@@ -30,3 +30,9 @@ management:
       exposure:
         include: health,info
         exclude: env,beans
+
+jwt:
+  issuer: gatieottae
+  secret: CHANGE_ME_256bit_secret____________________________________
+  access-exp-minutes: 30
+  refresh-exp-days: 14
