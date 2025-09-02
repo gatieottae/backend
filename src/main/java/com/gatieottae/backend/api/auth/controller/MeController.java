@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 @Tag(name = "Auth", description = "인증/회원가입/로그인/내 정보")
 @RestController
 @RequestMapping("/api/auth")
@@ -30,12 +32,28 @@ public class MeController {
             security = { @SecurityRequirement(name = "bearerAuth") }
     )
     @GetMapping("/me")
-    public ResponseEntity<MeResponse> me(Authentication authentication) {
+    public ResponseEntity<?> me(Authentication authentication) {
+        // 1) 인증 없음 → 401
+        if (authentication == null || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "code", "UNAUTHORIZED",
+                    "status", 401,
+                    "message", "로그인이 필요합니다."
+            ));
+        }
+
+        // 2) 인증 있음 → username으로 회원 조회
         String username = authentication.getName();
-        Member m = memberRepository.findByUsername(username).orElseThrow();
+        Member m = memberRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("회원 정보를 찾을 수 없습니다. username=" + username));
 
         MeResponse res = new MeResponse(
-                m.getId(), m.getUsername(), m.getName(), m.getNickname(), m.getEmail()
+                m.getId(),
+                m.getUsername(),
+                m.getName(),
+                m.getNickname(),
+                m.getEmail()
         );
         return ResponseEntity.ok(res);
     }

@@ -6,7 +6,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties({KakaoOAuthProperties.class})
+@EnableConfigurationProperties({
+        com.gatieottae.backend.config.KakaoOAuthProperties.class,
+        com.gatieottae.backend.security.jwt.JwtProperties.class
+})
 public class BackendApplication {
 
     public static void main(String[] args) {
