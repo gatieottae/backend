@@ -23,4 +23,7 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
     /** email로 Member 조회 */
     Optional<Member> findByEmail(String email);
+
+    /** 소셜 전용: provider + subject 조합 조회 (DB에 유니크 인덱스 존재) */
+    Optional<Member> findByOauthProviderAndOauthSubject(String oauthProvider, String oauthSubject);
 }

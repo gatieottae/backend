@@ -31,6 +31,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     // Spring Web: REST API, MVC
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    // WebClient (for Kakao OAuth)
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
     // Validation: 입력값 검증
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     // Actuator: 모니터링 및 관리
