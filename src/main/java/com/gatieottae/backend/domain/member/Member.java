@@ -4,7 +4,10 @@ import com.gatieottae.backend.common.jpa.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.Optional;
+import java.util.UUID;
 import java.time.OffsetDateTime;
+
 
 /**
  * 회원 도메인 엔티티
@@ -78,6 +81,41 @@ public class Member extends BaseTimeEntity {
     @Column(name = "last_login_at")
     private OffsetDateTime lastLoginAt;
 
+    /* ===================== 신규: 소셜 전용 가입 팩토리 ===================== */
+
+    /**
+     * 소셜 전용 계정 생성 팩토리
+     * - passwordHash 는 NOT NULL 제약을 만족시키기 위해 플레이스홀더를 저장
+     * - name 이 없으면 nickname, 그것도 없으면 "소셜사용자"로 대체
+     * - 상태는 기본 ACTIVE, 마지막 로그인 시각은 생성 시점으로 초기화
+     */
+    public static Member socialSignup(String username,
+                                      String email,
+                                      String name,
+                                      String nickname,
+                                      String profileImageUrl,
+                                      String provider,
+                                      String subject) {
+
+        // NOT NULL 컬럼 보호용 임의 플레이스홀더
+        // (운영에선 사용되지 않지만, 스키마 제약을 깨지 않도록 채워둠)
+        String placeholderPassword = "{SOCIAL}:" + UUID.randomUUID();
+
+        return Member.builder()
+                .username(username)
+                .passwordHash(placeholderPassword)
+                .email(email)
+                .name(Optional.ofNullable(name)
+                        .orElse(Optional.ofNullable(nickname).orElse("소셜사용자")))
+                .nickname(nickname)
+                .profileImageUrl(profileImageUrl)
+                .oauthProvider(provider)
+                .oauthSubject(subject)
+                .status(MemberStatus.ACTIVE)
+                .lastLoginAt(OffsetDateTime.now())
+                .build();
+    }
+
     /* ===================== 도메인 메서드(최소) ===================== */
 
     /** 로그인 직후 호출하여 마지막 로그인 시각 기록 */
@@ -99,4 +137,10 @@ public class Member extends BaseTimeEntity {
     public void changeStatus(MemberStatus newStatus) {
         this.status = newStatus == null ? this.status : newStatus;
     }
+
+    /** 서비스 레이어에서 명시적으로 시각을 주입하고 싶을 때 사용 */
+    public void markLastLogin(OffsetDateTime at) {
+        this.lastLoginAt = (at == null) ? OffsetDateTime.now() : at;
+    }
+
 }
