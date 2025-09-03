@@ -1,5 +1,6 @@
-package com.gatieottae.backend.domain.group;
+package com.gatieottae.backend.repository.group;
 
+import com.gatieottae.backend.domain.group.Group;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

@@ -1,5 +1,6 @@
-package com.gatieottae.backend.domain.group;
+package com.gatieottae.backend.repository.group;
 
+import com.gatieottae.backend.domain.group.GroupMember;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> {
