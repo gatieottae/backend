@@ -5,6 +5,8 @@ import com.gatieottae.backend.api.group.dto.GroupResponseDto;
 import com.gatieottae.backend.common.util.InviteCodeGenerator;
 import com.gatieottae.backend.domain.group.exception.GroupErrorCode;
 import com.gatieottae.backend.domain.group.exception.GroupException;
+import com.gatieottae.backend.repository.group.GroupMemberRepository;
+import com.gatieottae.backend.repository.group.GroupRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
