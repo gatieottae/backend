@@ -67,15 +67,18 @@ CREATE TABLE IF NOT EXISTS auth_provider (
 -- [그룹 테이블] travel_group
 -- ============================================================
 CREATE TABLE IF NOT EXISTS travel_group (
-                                            id                BIGSERIAL PRIMARY KEY,
-                                            name              VARCHAR(128) NOT NULL,
-                                            description       TEXT,
-                                            owner_id          BIGINT NOT NULL REFERENCES member(id) ON DELETE CASCADE,
-                                            invite_code       VARCHAR(12) UNIQUE,
-                                            invite_expires_at TIMESTAMPTZ,
-                                            invite_rotated_at TIMESTAMPTZ,
-                                            created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-                                            updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                            id           BIGSERIAL PRIMARY KEY,
+                                            name         VARCHAR(30)  NOT NULL,       -- 그룹명(30자)
+                                            owner_id     BIGINT NOT NULL REFERENCES member(id) ON DELETE CASCADE,
+                                            description  TEXT,                        -- 소개
+                                            destination  VARCHAR(100),                -- 여행지
+                                            start_date   DATE,                        -- 여행 시작일
+                                            end_date     DATE,                        -- 여행 종료일
+
+                                            invite_code  VARCHAR(12) UNIQUE,          -- 단일 활성 초대코드(만료 없음)
+
+                                            created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                            updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
                                             UNIQUE (owner_id, name)
 );
 

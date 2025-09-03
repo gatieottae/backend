@@ -2,94 +2,128 @@ package com.gatieottae.backend.domain.group;
 
 import com.gatieottae.backend.api.group.dto.GroupRequestDto;
 import com.gatieottae.backend.api.group.dto.GroupResponseDto;
-import com.gatieottae.backend.common.util.InviteCodeGenerator;
+import com.gatieottae.backend.common.util.InviteCodeGenerator; // static 모킹 대상
+import com.gatieottae.backend.domain.group.exception.GroupException;
 import com.gatieottae.backend.repository.group.GroupMemberRepository;
 import com.gatieottae.backend.repository.group.GroupRepository;
-import com.gatieottae.backend.domain.group.exception.GroupException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Instant;
+import java.time.LocalDate;
 
-import static org.assertj.core.api.Assertions.*;   // AssertJ - 가독성 좋은 단언문
-import static org.mockito.BDDMockito.*;            // Mockito BDD 스타일(given/then/verify)
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.BDDMockito.*;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.times;
 
+@ExtendWith(MockitoExtension.class)
 class GroupServiceTest {
 
-    // ✅ Repository 들은 외부 의존성이므로 "목(mock)"으로 대체한다.
-    // 실제 DB에 접근하지 않고, 원하는 리턴값/행동을 지정해서 단위 테스트에만 집중할 수 있다.
-    GroupRepository groupRepository = mock(GroupRepository.class);
-    GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
-    InviteCodeGenerator inviteCodeGenerator = mock(InviteCodeGenerator.class);  // ✅ 추가
+    @Mock GroupRepository groupRepository;
+    @Mock GroupMemberRepository groupMemberRepository;
 
-
-    // ✅ SUT(System Under Test): 테스트 대상 클래스
-    // 지금은 Service가 단순히 두 레포지토리만 주입받는다고 가정했다.
-    // (만약 InviteCodeGenerator 같은 의존성이 추가되면 여기에도 mock을 만들어 넘겨야 함)
-    GroupService sut = new GroupService(groupRepository, groupMemberRepository, inviteCodeGenerator);
+    // ⚠️ 현재 Service가 InviteCodeGenerator를 주입받는 형태라면 @InjectMocks 생성이 실패할 수 있어요.
+    //     - Service가 실제로 "static 메서드"를 호출(InviteCodeGenerator.generate(...))하고
+    //       필드 주입값을 쓰지 않는다면, 기본 생성자 혹은 필드 주입 없이도 돌아갑니다.
+    //     - 만약 생성자에서 꼭 필요하면 테스트에서 리플렉션으로 주입하거나,
+    //       Service 생성자를 (repo 2개만 받는) 오버로드로 하나 더 만드는 게 깔끔합니다.
+    @InjectMocks GroupService sut;
 
     @Test
-    @DisplayName("그룹 생성 성공 → 그룹 저장 + OWNER 멤버 등록")
-    void createGroup_success() {
-        // [Given] 준비 단계: 입력값 & 목 스텁 설정
+    @DisplayName("그룹 생성 성공 → 저장 + OWNER 등록 + 초대코드 세팅")
+    void create_success() {
         Long ownerId = 1L;
-        GroupRequestDto req = new GroupRequestDto("제주도 힐링", "설명");
+        GroupRequestDto req = new GroupRequestDto(
+                "제주도 힐링", "봄 여행",
+                "제주도",
+                LocalDate.of(2025,3,1),
+                LocalDate.of(2025,3,3)
+        );
 
-        // 📌 중복명 검사 스텁:
-        //   서비스는 먼저 existsByOwnerIdAndName(...)으로 중복 여부를 물어본다.
-        //   성공 케이스이므로 false(중복 아님)로 세팅.
-        given(groupRepository.existsByOwnerIdAndName(ownerId, req.getName()))
-                .willReturn(false);
-
-        // 📌 저장(save) 스텁:
-        //   JPA는 save 후 "id"를 채워 반환하지만, 단위 테스트에서는 우리가 직접 결과를 흉내 내야 한다.
-        //   willAnswer로 save에 들어온 엔티티를 받아 'id, 초대코드, 만료시각' 등을 채워서 되돌려준다.
-        //   여기서 g.toBuilder()를 쓰려면 엔티티에 @Builder(toBuilder=true)가 켜져 있어야 한다.
+        given(groupRepository.existsByOwnerIdAndName(ownerId, req.getName())).willReturn(false);
+        // save가 반환하는 엔티티에 id가 채워지도록 흉내
         given(groupRepository.save(any(Group.class))).willAnswer(inv -> {
-            Group g = inv.getArgument(0); // save에 들어온 원본 엔티티
-            return g.toBuilder()
-                    .id(1L) // ← 마치 DB가 PK를 발급한 것처럼
-                    .inviteCode("ABCDEFGH12")
-                    .inviteExpiresAt(Instant.now().plusSeconds(3600))
-                    .inviteRotatedAt(Instant.now())
-                    .build();
+            Group g = inv.getArgument(0);
+            return g.toBuilder().id(100L).build();
         });
 
-        // [When] 실행 단계: SUT 호출
-        GroupResponseDto res = sut.createGroup(ownerId, req);
+        // ⭐ static 메서드 모킹
+        try (MockedStatic<InviteCodeGenerator> mocked = org.mockito.Mockito.mockStatic(InviteCodeGenerator.class)) {
+            mocked.when(() -> InviteCodeGenerator.generate(12)).thenReturn("CODE12345678");
 
-        // [Then] 검증 단계: 기대한 결과/행동이 발생했는지 단언(assert) + 상호작용(verify)
-        // ✅ 응답 DTO에 id가 채워져 있어야 한다.
-        //    (서비스가 save()의 '반환값(saved)'을 사용해서 DTO를 만들었다는 증거)
-        assertThat(res.getId()).isEqualTo(1L);
+            GroupResponseDto res = sut.createGroup(ownerId, req);
 
-        // ✅ 이름 매핑이 올바른지 확인
-        assertThat(res.getName()).isEqualTo("제주도 힐링");
+            assertThat(res.getId()).isEqualTo(100L);
+            assertThat(res.getName()).isEqualTo("제주도 힐링");
+            assertThat(res.getInviteCode()).isEqualTo("CODE12345678");
 
-        // ✅ 저장 로직이 실제로 한 번 호출되었는지 확인
-        verify(groupRepository).save(any(Group.class));
+            InOrder io = inOrder(groupRepository, groupMemberRepository);
+            io.verify(groupRepository).existsByOwnerIdAndName(ownerId, "제주도 힐링");
+            io.verify(groupRepository).save(any(Group.class));
+            io.verify(groupMemberRepository).save(any(GroupMember.class));
+            io.verifyNoMoreInteractions();
 
-        // ✅ OWNER 멤버 자동 등록 로직이 호출되었는지 확인
-        verify(groupMemberRepository).save(any(GroupMember.class));
+            // static 호출 검증(선택)
+            mocked.verify(() -> InviteCodeGenerator.generate(12), times(1));
+        }
     }
 
     @Test
-    @DisplayName("중복 그룹명 → 예외 발생")
-    void createGroup_dupName() {
-        // [Given]
+    @DisplayName("동일 owner 내 이름 중복이면 예외")
+    void duplicate_same_owner() {
         Long ownerId = 1L;
-        GroupRequestDto req = new GroupRequestDto("중복", "설명");
+        GroupRequestDto req = new GroupRequestDto("중복", "desc", "부산", null, null);
+        given(groupRepository.existsByOwnerIdAndName(ownerId, "중복")).willReturn(true);
 
-        // 📌 중복 케이스: exists... 가 true를 반환하도록 스텁
-        given(groupRepository.existsByOwnerIdAndName(ownerId, req.getName())).willReturn(true);
+        assertThatThrownBy(() -> {
+            try (MockedStatic<InviteCodeGenerator> ignored = org.mockito.Mockito.mockStatic(InviteCodeGenerator.class)) {
+                sut.createGroup(ownerId, req);
+            }
+        }).isInstanceOf(GroupException.class);
 
-        // [When & Then]
-        // ✅ 서비스가 중복 이름인 경우 GroupException을 던지는지 검증
-        assertThatThrownBy(() -> sut.createGroup(ownerId, req))
-                .isInstanceOf(GroupException.class);
+        // save / member 등록 호출 안 됨
+        then(groupRepository).shouldHaveNoMoreInteractions();
+        then(groupMemberRepository).shouldHaveNoInteractions();
+        // static 모킹은 verify 하지 않아도 됨(어차피 예외로 흐름 종료)
+    }
 
-        // ✅ 중복이면 DB에 저장이 일어나면 안 된다.
-        verify(groupRepository, never()).save(any());
-        verify(groupMemberRepository, never()).save(any());
+    @Test
+    @DisplayName("다른 owner는 같은 이름 허용")
+    void same_name_different_owner_allowed() {
+        Long ownerA = 1L, ownerB = 2L;
+        GroupRequestDto req = new GroupRequestDto("같은이름", "desc", "속초", null, null);
+
+        given(groupRepository.existsByOwnerIdAndName(ownerA, "같은이름")).willReturn(false);
+        given(groupRepository.existsByOwnerIdAndName(ownerB, "같은이름")).willReturn(false);
+        given(groupRepository.save(any(Group.class))).willAnswer(inv -> {
+            Group g = inv.getArgument(0);
+            long id = g.getOwnerId().equals(ownerA) ? 1L : 2L;
+            return g.toBuilder().id(id).build();
+        });
+
+        try (MockedStatic<InviteCodeGenerator> mocked = org.mockito.Mockito.mockStatic(InviteCodeGenerator.class)) {
+            // 두 번 호출 → 서로 다른 값 리턴
+            mocked.when(() -> InviteCodeGenerator.generate(12))
+                    .thenReturn("CODE_A", "CODE_B");
+
+            GroupResponseDto a = sut.createGroup(ownerA, req);
+            GroupResponseDto b = sut.createGroup(ownerB, req);
+
+            assertThat(a.getId()).isEqualTo(1L);
+            assertThat(b.getId()).isEqualTo(2L);
+
+            then(groupRepository).should(times(1)).existsByOwnerIdAndName(ownerA, "같은이름");
+            then(groupRepository).should(times(1)).existsByOwnerIdAndName(ownerB, "같은이름");
+            then(groupRepository).should(times(2)).save(any(Group.class));
+            then(groupMemberRepository).should(times(2)).save(any(GroupMember.class));
+
+            mocked.verify(() -> InviteCodeGenerator.generate(12), times(2));
+        }
     }
 }

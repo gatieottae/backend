@@ -31,30 +31,25 @@ public class GroupService {
      */
     @Transactional
     public GroupResponseDto createGroup(Long ownerId, GroupRequestDto requestDto) {
-        // 1) 중복 이름 검사: 존재하면 예외
         if (groupRepository.existsByOwnerIdAndName(ownerId, requestDto.getName())) {
             throw new GroupException(GroupErrorCode.GROUP_NAME_DUPLICATED);
         }
 
-        // 2) 초대 코드/만료 시각 생성
-        Instant now = Instant.now();
-        String inviteCode = inviteCodeGenerator.generate(12);          // 12자리 대문자+숫자 조합 코드.
-        Instant expiresAt = now.plusSeconds(60L * 60 * 24 * 7);        // 7일 유효
+        // 초대코드만 생성 (만료/회전 없음)
+        String inviteCode = inviteCodeGenerator.generate(12);
 
-        // 3) 엔티티 구성(아직 id 없음)
         Group toSave = Group.builder()
                 .name(requestDto.getName())
                 .description(requestDto.getDescription())
                 .ownerId(ownerId)
+                .destination(requestDto.getDestination())
+                .startDate(requestDto.getStartDate())
+                .endDate(requestDto.getEndDate())
                 .inviteCode(inviteCode)
-                .inviteRotatedAt(now)
-                .inviteExpiresAt(expiresAt)
                 .build();
 
-        // 4) 저장 → ★반드시 반환값(saved) 사용★ (DB/Mock이 부여한 id 포함)
         Group saved = groupRepository.save(toSave);
 
-        // 5) OWNER 멤버 자동 등록 (saved의 id 사용)
         GroupMember owner = GroupMember.builder()
                 .groupId(saved.getId())
                 .memberId(ownerId)
@@ -62,13 +57,14 @@ public class GroupService {
                 .build();
         groupMemberRepository.save(owner);
 
-        // 6) 응답 DTO는 반드시 saved 기반으로 생성 (id 포함)
         return GroupResponseDto.builder()
                 .id(saved.getId())
                 .name(saved.getName())
                 .description(saved.getDescription())
+                .destination(saved.getDestination())
+                .startDate(saved.getStartDate())
+                .endDate(saved.getEndDate())
                 .inviteCode(saved.getInviteCode())
-                .inviteExpiresAt(saved.getInviteExpiresAt())
                 .build();
     }
 }
