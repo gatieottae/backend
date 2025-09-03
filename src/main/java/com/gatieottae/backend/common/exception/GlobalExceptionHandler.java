@@ -4,6 +4,7 @@ import com.gatieottae.backend.domain.group.exception.GroupException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.validation.BindingResult;
@@ -120,15 +121,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(GroupException.class)
     public ResponseEntity<ApiErrorResponse> handleGroupException(GroupException ex) {
-        log.warn("Group exception: {}", ex.getMessage());
+        log.warn("Group exception: {} - {}", ex.getErrorCode(), ex.getMessage());
+
+        int httpStatus = switch (ex.getErrorCode()) {
+            case INVALID_CODE -> HttpStatus.NOT_FOUND.value();   // 404
+            case ALREADY_MEMBER, GROUP_NAME_DUPLICATED -> HttpStatus.CONFLICT.value(); // 409
+        };
 
         ApiErrorResponse body = ApiErrorResponse.builder()
-                .code(ex.getErrorCode().name())   // 예: GROUP_NAME_DUPLICATED
-                .status(409)
+                .code(ex.getErrorCode().name())
+                .status(httpStatus)
                 .message(ex.getMessage())
+                .errors(null)
                 .build();
 
-        return ResponseEntity.status(409).body(body);
+        return ResponseEntity.status(httpStatus).body(body);
     }
 
     /* ========================= Helpers ============================ */
