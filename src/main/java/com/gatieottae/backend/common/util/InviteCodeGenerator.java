@@ -1,5 +1,7 @@
 package com.gatieottae.backend.common.util;
 
+import org.springframework.stereotype.Component;
+
 import java.security.SecureRandom;
 
 /**
@@ -7,6 +9,8 @@ import java.security.SecureRandom;
  * - 알파벳 대문자 + 숫자 조합
  * - 길이 기본값 8자리
  */
+
+@Component
 public class InviteCodeGenerator {
 
     private static final String CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

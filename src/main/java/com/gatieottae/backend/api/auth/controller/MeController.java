@@ -28,8 +28,7 @@ public class MeController {
      * - SecurityContext의 Authentication.getName() → username
      */
     @Operation(
-            summary = "내 정보 조회",
-            security = { @SecurityRequirement(name = "bearerAuth") }
+            summary = "내 정보 조회"
     )
     @GetMapping("/me")
     public ResponseEntity<?> me(Authentication authentication) {

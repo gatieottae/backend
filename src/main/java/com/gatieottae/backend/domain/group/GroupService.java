@@ -7,10 +7,9 @@ import com.gatieottae.backend.domain.group.exception.GroupErrorCode;
 import com.gatieottae.backend.domain.group.exception.GroupException;
 import com.gatieottae.backend.repository.group.GroupMemberRepository;
 import com.gatieottae.backend.repository.group.GroupRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional; // 스프링 트랜잭션
 import java.time.Instant;
 
 /**
@@ -22,6 +21,7 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final InviteCodeGenerator inviteCodeGenerator;
 
     /**
      * 새로운 그룹 생성
@@ -31,42 +31,44 @@ public class GroupService {
      */
     @Transactional
     public GroupResponseDto createGroup(Long ownerId, GroupRequestDto requestDto) {
-        // 1. 중복 이름 검사
+        // 1) 중복 이름 검사: 존재하면 예외
         if (groupRepository.existsByOwnerIdAndName(ownerId, requestDto.getName())) {
             throw new GroupException(GroupErrorCode.GROUP_NAME_DUPLICATED);
         }
 
-        // 2. 그룹 생성
-        String inviteCode = InviteCodeGenerator.generateDefault();
-        Instant expiresAt = Instant.now().plusSeconds(60 * 60 * 24 * 7); // 7일 유효
+        // 2) 초대 코드/만료 시각 생성
+        Instant now = Instant.now();
+        String inviteCode = inviteCodeGenerator.generate(12);          // 12자리 대문자+숫자 조합 코드.
+        Instant expiresAt = now.plusSeconds(60L * 60 * 24 * 7);        // 7일 유효
 
-        Group group = Group.builder()
+        // 3) 엔티티 구성(아직 id 없음)
+        Group toSave = Group.builder()
                 .name(requestDto.getName())
                 .description(requestDto.getDescription())
                 .ownerId(ownerId)
                 .inviteCode(inviteCode)
+                .inviteRotatedAt(now)
                 .inviteExpiresAt(expiresAt)
-                .inviteRotatedAt(Instant.now())
                 .build();
 
-        groupRepository.save(group);
+        // 4) 저장 → ★반드시 반환값(saved) 사용★ (DB/Mock이 부여한 id 포함)
+        Group saved = groupRepository.save(toSave);
 
-        // 3. OWNER 멤버 자동 등록
-        GroupMember groupMember = GroupMember.builder()
-                .groupId(group.getId())
+        // 5) OWNER 멤버 자동 등록 (saved의 id 사용)
+        GroupMember owner = GroupMember.builder()
+                .groupId(saved.getId())
                 .memberId(ownerId)
                 .role(GroupMember.Role.OWNER)
                 .build();
+        groupMemberRepository.save(owner);
 
-        groupMemberRepository.save(groupMember);
-
-        // 4. 응답 DTO 반환
+        // 6) 응답 DTO는 반드시 saved 기반으로 생성 (id 포함)
         return GroupResponseDto.builder()
-                .id(group.getId())
-                .name(group.getName())
-                .description(group.getDescription())
-                .inviteCode(group.getInviteCode())
-                .inviteExpiresAt(group.getInviteExpiresAt())
+                .id(saved.getId())
+                .name(saved.getName())
+                .description(saved.getDescription())
+                .inviteCode(saved.getInviteCode())
+                .inviteExpiresAt(saved.getInviteExpiresAt())
                 .build();
     }
 }
