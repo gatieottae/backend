@@ -1,8 +1,11 @@
 package com.gatieottae.backend.common.jpa;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+
 import java.time.OffsetDateTime;
 
+@Getter
 @MappedSuperclass
 public abstract class BaseTimeEntity {
 
@@ -23,7 +26,4 @@ public abstract class BaseTimeEntity {
     protected void onUpdate() {
         this.updatedAt = OffsetDateTime.now();
     }
-
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }
