@@ -1,5 +1,6 @@
 package com.gatieottae.backend.common.exception;
 
+import com.gatieottae.backend.domain.group.exception.GroupException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -115,6 +116,19 @@ public class GlobalExceptionHandler {
         log.error("Unexpected error", ex);
         ApiErrorResponse body = ApiErrorResponse.of(ErrorCode.INTERNAL_ERROR, ex.getMessage(), null);
         return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.status).body(body);
+    }
+
+    @ExceptionHandler(GroupException.class)
+    public ResponseEntity<ApiErrorResponse> handleGroupException(GroupException ex) {
+        log.warn("Group exception: {}", ex.getMessage());
+
+        ApiErrorResponse body = ApiErrorResponse.builder()
+                .code(ex.getErrorCode().name())   // 예: GROUP_NAME_DUPLICATED
+                .status(409)
+                .message(ex.getMessage())
+                .build();
+
+        return ResponseEntity.status(409).body(body);
     }
 
     /* ========================= Helpers ============================ */

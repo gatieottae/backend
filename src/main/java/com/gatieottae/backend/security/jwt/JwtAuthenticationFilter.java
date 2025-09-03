@@ -3,6 +3,10 @@ package com.gatieottae.backend.security.jwt;
 import com.gatieottae.backend.domain.member.Member;
 import com.gatieottae.backend.domain.member.MemberStatus;
 import com.gatieottae.backend.repository.member.MemberRepository;
+
+import com.gatieottae.backend.security.auth.LoginMember;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,7 +21,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
+// ✅ 변경: 권한 리스트 생성에 사용
+import java.util.List;
 
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -31,18 +36,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain chain)
             throws ServletException, IOException {
 
-        String token = resolveToken(request); // ← 헤더 또는 쿠키
+        String token = resolveToken(request);
 
         if (StringUtils.hasText(token)) {
             try {
-                // 1) 토큰 검증
                 jwtTokenProvider.parseClaims(token);
 
-                // 2) 식별자 추출
                 String username = jwtTokenProvider.getUsername(token);
                 Long memberId = jwtTokenProvider.getMemberId(token);
 
-                // 3) 사용자 상태 확인
                 Member m = memberRepository.findByUsername(username).orElse(null);
                 if (m == null || !MemberStatus.ACTIVE.equals(m.getStatus())) {
                     SecurityContextHolder.clearContext();
@@ -50,11 +52,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
 
-                // 4) 인증 컨텍스트 세팅
+                // ✅ 여기부터 변경: principal을 LoginMember로 세팅
+                // 권한은 필요 시 DB/클레임에서 가져오면 됨. 우선 ROLE_USER 기본 부여.
+                List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+                LoginMember principal = new LoginMember(memberId, username, authorities);
+
                 AbstractAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                                username, null, Collections.emptyList());
-                auth.setDetails(memberId);
+                        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+
+                // ✅ 더 이상 details에 memberId 넣지 않음
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
             } catch (JwtException | IllegalArgumentException e) {
@@ -66,12 +72,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String resolveToken(HttpServletRequest request) {
-        // 1) Authorization: Bearer ...
         String auth = request.getHeader("Authorization");
         if (StringUtils.hasText(auth) && auth.startsWith("Bearer ")) {
             return auth.substring(7).trim();
         }
-        // 2) HttpOnly 쿠키: accessToken
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie c : cookies) {
