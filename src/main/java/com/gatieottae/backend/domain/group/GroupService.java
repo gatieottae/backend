@@ -67,4 +67,18 @@ public class GroupService {
                 .inviteCode(saved.getInviteCode())
                 .build();
     }
+
+    /** 초대코드로 참여 */
+    @Transactional
+    public GroupResponseDto joinByCode(String code, Long userId) {
+        Group group = groupRepository.findByInviteCode(code)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.INVALID_CODE));
+
+        if (groupMemberRepository.existsByGroupIdAndMemberId(group.getId(), userId)) {
+            throw new GroupException(GroupErrorCode.ALREADY_MEMBER);
+        }
+
+        groupMemberRepository.save(GroupMember.create(group, userId, GroupMember.Role.MEMBER));
+        return GroupResponseDto.from(group);
+    }
 }

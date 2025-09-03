@@ -17,4 +17,5 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
      * 초대코드로 그룹 조회 (참여/유효성 검사에 사용).
      */
     Optional<Group> findByInviteCode(String inviteCode);
+
 }

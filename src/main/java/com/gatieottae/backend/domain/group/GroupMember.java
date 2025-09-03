@@ -4,11 +4,6 @@ import com.gatieottae.backend.common.jpa.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
-/**
- * travel_group_member 테이블 매핑 엔티티.
- * - (group_id, member_id) 유니크
- * - role: OWNER/ADMIN/MEMBER (DB CHECK 제약과 일치하도록 Enum 사용)
- */
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -27,8 +22,7 @@ public class GroupMember extends BaseTimeEntity {
 
     public enum Role { OWNER, ADMIN, MEMBER }
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // BIGSERIAL 매핑
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "group_id", nullable = false)
@@ -40,4 +34,13 @@ public class GroupMember extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private Role role;
+
+    // 정적 팩토리
+    public static GroupMember create(Group group, Long memberId, Role role) {
+        return GroupMember.builder()
+                .groupId(group.getId())
+                .memberId(memberId)
+                .role(role)
+                .build();
+    }
 }

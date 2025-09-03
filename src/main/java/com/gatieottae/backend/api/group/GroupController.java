@@ -1,5 +1,6 @@
 package com.gatieottae.backend.api.group;
 
+import com.gatieottae.backend.api.group.dto.GroupJoinRequestDto;
 import com.gatieottae.backend.api.group.dto.GroupRequestDto;
 import com.gatieottae.backend.api.group.dto.GroupResponseDto;
 import com.gatieottae.backend.domain.group.GroupService;
@@ -34,5 +35,20 @@ public class GroupController {
     ) {
         GroupResponseDto response = groupService.createGroup(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @Operation(summary = "초대코드로 참여", description = "초대 코드를 입력해 그룹에 참여합니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "참여 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요"),
+            @ApiResponse(responseCode = "404", description = "코드 불일치/만료"),
+            @ApiResponse(responseCode = "409", description = "이미 멤버")
+    })
+    @PostMapping("/join/code")
+    public ResponseEntity<GroupResponseDto> joinByCode(
+            @Valid @RequestBody GroupJoinRequestDto request,
+            @AuthenticationPrincipal(expression = "id") Long userId
+    ) {
+        return ResponseEntity.ok(groupService.joinByCode(request.getCode(), userId));
     }
 }

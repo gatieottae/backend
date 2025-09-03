@@ -1,5 +1,6 @@
 package com.gatieottae.backend.api.group.dto;
 
+import com.gatieottae.backend.domain.group.Group;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -20,4 +21,16 @@ public class GroupResponseDto {
     private LocalDate startDate;
     private LocalDate endDate;
     private String inviteCode;
+
+    public static GroupResponseDto from(Group group) {
+        return GroupResponseDto.builder()
+                .id(group.getId())
+                .name(group.getName())
+                .description(group.getDescription())
+                .destination(group.getDestination())
+                .startDate(group.getStartDate())
+                .endDate(group.getEndDate())
+                .inviteCode(group.getInviteCode())
+                .build();
+    }
 }
