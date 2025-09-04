@@ -51,4 +51,21 @@ public class GroupController {
     ) {
         return ResponseEntity.ok(groupService.joinByCode(request.getCode(), userId));
     }
+
+    @Operation(summary = "그룹 수정", description = "OWNER만 그룹 정보를 수정할 수 있습니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "수정 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요"),
+            @ApiResponse(responseCode = "403", description = "권한 없음"),
+            @ApiResponse(responseCode = "404", description = "그룹 없음")
+    })
+    @PutMapping("/{id}")
+    public ResponseEntity<GroupResponseDto> updateGroup(
+            @PathVariable Long id,
+            @Valid @RequestBody GroupRequestDto request,
+            @AuthenticationPrincipal(expression = "id") Long userId
+    ) {
+        GroupResponseDto response = groupService.updateGroup(id, userId, request);
+        return ResponseEntity.ok(response);
+    }
 }

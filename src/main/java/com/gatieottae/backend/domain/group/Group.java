@@ -51,4 +51,13 @@ public class Group extends BaseTimeEntity {
     // 초대코드(단일, 만료 없음)
     @Column(name = "invite_code", length = 12, unique = true)
     private String inviteCode;
+
+    public void update(String name, String description, String destination,
+                       LocalDate startDate, LocalDate endDate) {
+        this.name = name;
+        this.description = description;
+        this.destination = destination;
+        this.startDate = startDate;
+        this.endDate = endDate;
+    }
 }

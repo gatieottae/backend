@@ -81,4 +81,32 @@ public class GroupService {
         groupMemberRepository.save(GroupMember.create(group, userId, GroupMember.Role.MEMBER));
         return GroupResponseDto.from(group);
     }
+
+    @Transactional
+    public GroupResponseDto updateGroup(Long groupId, Long userId, GroupRequestDto requestDto) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // OWNER 검증
+        if (!group.getOwnerId().equals(userId)) {
+            throw new GroupException(GroupErrorCode.NO_PERMISSION);
+        }
+
+        // 중복 이름 체크 (본인 그룹 제외)
+        if (groupRepository.existsByOwnerIdAndName(userId, requestDto.getName())
+                && !group.getName().equals(requestDto.getName())) {
+            throw new GroupException(GroupErrorCode.GROUP_NAME_DUPLICATED);
+        }
+
+        // 엔티티 값 업데이트
+        group.update(
+                requestDto.getName(),
+                requestDto.getDescription(),
+                requestDto.getDestination(),
+                requestDto.getStartDate(),
+                requestDto.getEndDate()
+        );
+
+        return GroupResponseDto.from(group);
+    }
 }

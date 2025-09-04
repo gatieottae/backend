@@ -124,8 +124,11 @@ public class GlobalExceptionHandler {
         log.warn("Group exception: {} - {}", ex.getErrorCode(), ex.getMessage());
 
         int httpStatus = switch (ex.getErrorCode()) {
-            case INVALID_CODE -> HttpStatus.NOT_FOUND.value();   // 404
-            case ALREADY_MEMBER, GROUP_NAME_DUPLICATED -> HttpStatus.CONFLICT.value(); // 409
+            case INVALID_CODE -> HttpStatus.NOT_FOUND.value();
+            case ALREADY_MEMBER -> HttpStatus.CONFLICT.value();
+            case GROUP_NAME_DUPLICATED -> HttpStatus.CONFLICT.value();
+            case GROUP_NOT_FOUND -> HttpStatus.NOT_FOUND.value();
+            case NO_PERMISSION -> HttpStatus.FORBIDDEN.value();
         };
 
         ApiErrorResponse body = ApiErrorResponse.builder()
