@@ -1,4 +1,4 @@
-package com.gatieottae.backend.api.group;
+package com.gatieottae.backend.api.group.controller;
 
 import com.gatieottae.backend.api.group.dto.GroupJoinRequestDto;
 import com.gatieottae.backend.api.group.dto.GroupRequestDto;
