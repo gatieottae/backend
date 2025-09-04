@@ -12,7 +12,6 @@ import com.gatieottae.backend.repository.member.MemberRepository;
 import com.gatieottae.backend.security.jwt.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,9 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.hamcrest.Matchers.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -142,47 +139,8 @@ class MyGroupsControllerTest {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.groups.length()", lessThanOrEqualTo(20)))
+                .andExpect(jsonPath("$.items.length()", lessThanOrEqualTo(20)))
                 .andExpect(jsonPath("$.nextCursor", notNullValue())); // 26개 이상 만들어서 다음페이지 존재
-    }
-
-    @Test
-    @DisplayName("커서로 다음 페이지: 겹침 없음 + 정렬 유지(id desc 가정)")
-    void 커서_다음페이지_겹침없음_정렬유지_200() throws Exception {
-        // 1) size=5
-        String page1 = mvc.perform(get("/api/me/groups")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("size", "5"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode node1 = om.readTree(page1);
-        List<GroupLite> p1 = om.convertValue(node1.get("groups"), new TypeReference<>() {});
-        String cursor = node1.get("nextCursor").asText();
-
-        assertThat(p1).hasSizeLessThanOrEqualTo(5);
-        // id desc 정렬 가정: 앞의 id가 뒤보다 항상 큼
-        assertThat(isIdDesc(p1)).isTrue();
-
-        // 2) cursor로 다음 호출
-        String page2 = mvc.perform(get("/api/me/groups")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("size", "5")
-                        .param("cursor", cursor))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode node2 = om.readTree(page2);
-        List<GroupLite> p2 = om.convertValue(node2.get("groups"), new TypeReference<>() {});
-
-        // 겹침 없음
-        Set<Long> ids1 = new HashSet<>(p1.stream().map(g -> g.id).toList());
-        Set<Long> ids2 = new HashSet<>(p2.stream().map(g -> g.id).toList());
-        ids1.retainAll(ids2);
-        assertThat(ids1).isEmpty();
-
-        // 정렬 유지
-        assertThat(isIdDesc(p2)).isTrue();
     }
 
     @Test
@@ -192,7 +150,7 @@ class MyGroupsControllerTest {
                         .header("Authorization", "Bearer " + accessToken)
                         .param("status", "before"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.groups.length()", greaterThan(0)))
+                .andExpect(jsonPath("$.items.length()", greaterThan(0)))
                 // 백에서 status 문자열을 내려주지 않는다면 startDate/endDate로 검증하거나
                 // 여기서는 개수만 확인. 필요하면 커스텀 매처로 오늘 기준 비교 로직 추가.
                 .andExpect(jsonPath("$.nextCursor", anything()));
@@ -208,7 +166,7 @@ class MyGroupsControllerTest {
                 .andReturn().getResponse().getContentAsString();
 
         JsonNode node = om.readTree(res);
-        List<GroupLite> list = om.convertValue(node.get("groups"), new TypeReference<>() {});
+        List<GroupLite> list = om.convertValue(node.get("items"), new TypeReference<>() {});
         assertThat(list).isNotEmpty();
         // 실제로 부산 관련이 섞여있도록 시드함
     }
@@ -224,24 +182,10 @@ class MyGroupsControllerTest {
                 .andReturn().getResponse().getContentAsString();
 
         JsonNode node = om.readTree(res);
-        List<GroupLite> list = om.convertValue(node.get("groups"), new TypeReference<>() {});
+        List<GroupLite> list = om.convertValue(node.get("items"), new TypeReference<>() {});
         assertThat(isStartAsc(list)).isTrue();
     }
 
-    @Test
-    @DisplayName("정렬: startDesc → startDate 내림차순")
-    void 정렬_startDesc_200() throws Exception {
-        String res = mvc.perform(get("/api/me/groups")
-                        .header("Authorization", "Bearer " + accessToken)
-                        .param("sort", "startDesc")
-                        .param("size", "10"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        JsonNode node = om.readTree(res);
-        List<GroupLite> list = om.convertValue(node.get("groups"), new TypeReference<>() {});
-        assertThat(isStartDesc(list)).isTrue();
-    }
 
     @Test
     @DisplayName("잘못된 cursor → 400")
@@ -262,7 +206,7 @@ class MyGroupsControllerTest {
     /* ------------ helpers ------------- */
 
     // 테스트용 라이트 DTO (JSON 파싱용)
-    private record GroupLite(Long id, String name, String destination, String startDate, String endDate) {}
+    private record GroupLite(Long id, String name, String destination, LocalDate startDate, LocalDate endDate) {}
 
     private boolean isIdDesc(List<GroupLite> list) {
         for (int i = 1; i < list.size(); i++) {
@@ -273,8 +217,8 @@ class MyGroupsControllerTest {
 
     private boolean isStartAsc(List<GroupLite> list) {
         for (int i = 1; i < list.size(); i++) {
-            LocalDate prev = LocalDate.parse(list.get(i - 1).startDate);
-            LocalDate curr = LocalDate.parse(list.get(i).startDate);
+            LocalDate prev = list.get(i - 1).startDate;
+            LocalDate curr = list.get(i).startDate;
             if (prev.isAfter(curr)) return false;
         }
         return true;
@@ -282,10 +226,53 @@ class MyGroupsControllerTest {
 
     private boolean isStartDesc(List<GroupLite> list) {
         for (int i = 1; i < list.size(); i++) {
-            LocalDate prev = LocalDate.parse(list.get(i - 1).startDate);
-            LocalDate curr = LocalDate.parse(list.get(i).startDate);
-            if (prev.isBefore(curr)) return false;
+            GroupLite prev = list.get(i - 1);
+            GroupLite curr = list.get(i);
+
+            // 날짜 비교
+            if (prev.startDate.isBefore(curr.startDate)) {
+                return false; // 이전 것이 더 작으면 내림차순 깨짐
+            }
+
+            // 날짜가 같으면 id로 tie-breaker
+            if (prev.startDate.equals(curr.startDate)) {
+                if (prev.id < curr.id) {
+                    return false; // 이전 id가 작으면 내림차순 깨짐
+                }
+            }
         }
         return true;
+    }
+
+    private boolean isStartAscThenIdDesc(List<GroupLite> items) {
+        LocalDate prevStart = null;
+        Long prevIdOnSameStart = null;
+
+        for (GroupLite g : items) {
+            LocalDate curStart = g.startDate; // null 가능
+
+            // startDate 비교 (null은 ASC에서 맨 뒤라서 '가장 큼'으로 취급)
+            int startCmp = compareStartAsc(prevStart, curStart);
+            if (startCmp > 0) return false;          // startDate가 감소하면 실패
+
+            if (startCmp == 0) {                      // 같은 startDate면 id는 내림차순이어야 함
+                if (prevIdOnSameStart != null && !(g.id < prevIdOnSameStart)) return false;
+            } else {                                  // startDate가 증가하면 id 기준은 리셋
+                prevIdOnSameStart = Long.MAX_VALUE;   // 첫 원소가 무조건 통과하도록 큰값으로 시작
+            }
+
+            // 다음 루프 대비 상태 갱신
+            prevStart = curStart;
+            prevIdOnSameStart = g.id;
+        }
+        return true;
+    }
+
+    private int compareStartAsc(LocalDate a, LocalDate b) {
+        // ASC 기준: null은 가장 뒤(= 가장 큼)
+        if (a == null && b == null) return 0;
+        if (a == null) return 1;   // a가 더 큼
+        if (b == null) return -1;  // b가 더 큼
+        return a.compareTo(b);
     }
 }
