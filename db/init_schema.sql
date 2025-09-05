@@ -104,59 +104,127 @@ DROP TRIGGER IF EXISTS trg_travel_group_member_set_updated_at ON travel_group_me
 CREATE TRIGGER trg_travel_group_member_set_updated_at
     BEFORE UPDATE ON travel_group_member
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- ===============================
+-- ENUM types
+-- ===============================
+DO $$ BEGIN
+    CREATE TYPE schedule_participant_status AS ENUM ('INVITED','GOING','NOT_GOING','TENTATIVE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- ============================================================
--- [일정 테이블] schedule
--- ============================================================
+DO $$ BEGIN
+    CREATE TYPE poll_status AS ENUM ('OPEN','CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ===============================
+-- updated_at 자동 갱신 트리거
+-- ===============================
+CREATE OR REPLACE FUNCTION set_updated_at()
+    RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at := now();
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+
+-- ===============================
+-- schedule
+-- ===============================
 CREATE TABLE IF NOT EXISTS schedule (
-                                        id BIGSERIAL PRIMARY KEY,
-                                        group_id   BIGINT NOT NULL REFERENCES travel_group(id) ON DELETE CASCADE,
-                                        title      VARCHAR(128) NOT NULL,
+                                        id          BIGSERIAL PRIMARY KEY,
+                                        group_id    BIGINT NOT NULL REFERENCES travel_group(id) ON DELETE CASCADE,
+                                        title       VARCHAR(128) NOT NULL,
                                         description TEXT,
-                                        location   VARCHAR(255),
-                                        start_time TIMESTAMPTZ NOT NULL,
-                                        end_time   TIMESTAMPTZ,
-                                        created_by BIGINT REFERENCES member(id) ON DELETE SET NULL,
-                                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                                        location    VARCHAR(255),
+                                        start_time  TIMESTAMPTZ NOT NULL,
+                                        end_time    TIMESTAMPTZ,
+                                        created_by  BIGINT REFERENCES member(id) ON DELETE SET NULL,
+                                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- 종료시간 무결성
+                                        CONSTRAINT schedule_time_ck CHECK (end_time IS NULL OR end_time > start_time)
 );
 
--- 참가자
+-- 달력/겹침 조회 최적화
+CREATE INDEX IF NOT EXISTS idx_schedule_group_time
+    ON schedule (group_id, start_time, end_time);
+
+-- 동일 그룹에서 제목+시간 완전중복 방지 (end_time NULL 허용 대비)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_group_title_time
+    ON schedule (group_id, title, start_time, COALESCE(end_time, start_time));
+
+CREATE TRIGGER trg_schedule_updated_at
+    BEFORE UPDATE ON schedule
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ===============================
+-- schedule_participant
+-- ===============================
 CREATE TABLE IF NOT EXISTS schedule_participant (
-                                                    id BIGSERIAL PRIMARY KEY,
-                                                    schedule_id BIGINT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
-                                                    member_id   BIGINT NOT NULL REFERENCES member(id) ON DELETE CASCADE,
-                                                    status      VARCHAR(32) NOT NULL DEFAULT 'invited',
+                                                    id           BIGSERIAL PRIMARY KEY,
+                                                    schedule_id  BIGINT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
+                                                    member_id    BIGINT NOT NULL REFERENCES member(id) ON DELETE CASCADE,
+                                                    status       schedule_participant_status NOT NULL DEFAULT 'INVITED',
+                                                    joined_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
                                                     UNIQUE (schedule_id, member_id)
 );
 
--- ============================================================
--- [투표 테이블] poll
--- ============================================================
+-- 참석자 카운트/목록 최적화
+CREATE INDEX IF NOT EXISTS idx_sp_schedule_status
+    ON schedule_participant (schedule_id, status, joined_at);
+
+-- ===============================
+-- poll
+-- ===============================
 CREATE TABLE IF NOT EXISTS poll (
-                                    id BIGSERIAL PRIMARY KEY,
-                                    group_id   BIGINT NOT NULL REFERENCES travel_group(id) ON DELETE CASCADE,
-                                    title      VARCHAR(128) NOT NULL,
+                                    id          BIGSERIAL PRIMARY KEY,
+                                    group_id    BIGINT NOT NULL REFERENCES travel_group(id) ON DELETE CASCADE,
+                                    title       VARCHAR(128) NOT NULL,
                                     description TEXT,
-                                    created_by BIGINT REFERENCES member(id) ON DELETE SET NULL,
-                                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                                    expires_at TIMESTAMPTZ
+                                    multiple    BOOLEAN NOT NULL DEFAULT FALSE,
+                                    status      poll_status NOT NULL DEFAULT 'OPEN',
+                                    created_by  BIGINT REFERENCES member(id) ON DELETE SET NULL,
+                                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                    expires_at  TIMESTAMPTZ
 );
 
+CREATE TRIGGER trg_poll_updated_at
+    BEFORE UPDATE ON poll
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 마감 임박/리스트 정렬 최적화
+CREATE INDEX IF NOT EXISTS idx_poll_group_expires
+    ON poll (group_id, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_poll_group_created
+    ON poll (group_id, created_at DESC);
+
+-- ===============================
+-- poll_option
+-- ===============================
 CREATE TABLE IF NOT EXISTS poll_option (
-                                           id BIGSERIAL PRIMARY KEY,
-                                           poll_id BIGINT NOT NULL REFERENCES poll(id) ON DELETE CASCADE,
-                                           option_text VARCHAR(255) NOT NULL
+                                           id           BIGSERIAL PRIMARY KEY,
+                                           poll_id      BIGINT NOT NULL REFERENCES poll(id) ON DELETE CASCADE,
+                                           option_text  VARCHAR(255) NOT NULL,
+                                           order_no     INT NOT NULL DEFAULT 0,
+                                           extra        JSONB  -- { "link": "https://...", "price": 120000 } 등
 );
 
+CREATE INDEX IF NOT EXISTS idx_poll_option_order
+    ON poll_option (poll_id, order_no);
+
+-- ===============================
+-- poll_vote
+-- ===============================
 CREATE TABLE IF NOT EXISTS poll_vote (
-                                         id BIGSERIAL PRIMARY KEY,
+                                         id        BIGSERIAL PRIMARY KEY,
                                          poll_id   BIGINT NOT NULL REFERENCES poll(id) ON DELETE CASCADE,
                                          option_id BIGINT NOT NULL REFERENCES poll_option(id) ON DELETE CASCADE,
                                          member_id BIGINT NOT NULL REFERENCES member(id) ON DELETE CASCADE,
                                          voted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-                                         UNIQUE (poll_id, member_id)
+    -- 다중선택 지원: 한 사람이 한 옵션에 1표
+                                         UNIQUE (poll_id, option_id, member_id)
 );
+
 
 -- ============================================================
 -- [정산/비용]
