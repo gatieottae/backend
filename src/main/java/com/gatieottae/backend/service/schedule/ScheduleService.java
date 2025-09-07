@@ -7,7 +7,6 @@ import com.gatieottae.backend.domain.schedule.ScheduleParticipant;
 import com.gatieottae.backend.domain.schedule.ScheduleParticipantStatus;
 import com.gatieottae.backend.repository.schedule.ScheduleParticipantRepository;
 import com.gatieottae.backend.repository.schedule.ScheduleRepository;
-import com.gatieottae.backend.repository.schedule.view.AttendeeSampleView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;

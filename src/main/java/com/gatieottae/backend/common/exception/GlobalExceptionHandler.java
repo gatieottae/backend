@@ -12,8 +12,11 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static java.util.stream.Collectors.toList;
 
@@ -139,6 +142,15 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(httpStatus).body(body);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handle(ResponseStatusException ex) {
+        return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
+                "code", ex.getStatusCode().value(),
+                "message", ex.getReason(),
+                "timestamp", OffsetDateTime.now().toString()
+        ));
     }
 
     /* ========================= Helpers ============================ */
