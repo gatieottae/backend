@@ -1,4 +1,3 @@
-// src/main/java/com/gatieottae/backend/service/schedule/ScheduleService.java
 package com.gatieottae.backend.service.schedule;
 
 import com.gatieottae.backend.api.schedule.dto.ScheduleDto;
@@ -18,7 +17,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -126,15 +124,68 @@ public class ScheduleService {
         upsertAttendance(scheduleId, memberId, status);
     }
 
+    @Transactional
+    public ScheduleDto.CreateRes update(Long groupId, Long scheduleId, Long memberId, ScheduleDto.UpdateReq req) {
+        // 0) 로드 + 그룹 일치 검증
+        Schedule s = scheduleRepo.findByIdAndGroupId(scheduleId, groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "schedule not found"));
+
+        // 1) 권한 검증 (예시: 작성자만 수정)
+        if (s.getCreatedBy() != null && !s.getCreatedBy().equals(memberId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "only creator can update this schedule");
+        }
+
+        // 2) 입력 검증
+        if (req.title() != null && !StringUtils.hasText(req.title())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "title cannot be blank");
+        }
+        if (req.startTime() != null && req.endTime() != null && !req.startTime().isBefore(req.endTime())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "endTime must be after startTime");
+        }
+
+        // 3) 변경 적용(널이 아닐 때만 변경)
+        if (req.title() != null)       s.setTitle(req.title().trim());
+        if (req.description() != null) s.setDescription(req.description());
+        if (req.location() != null)    s.setLocation(req.location());
+        if (req.startTime() != null)   s.setStartTime(req.startTime());
+        if (req.endTime() != null)     s.setEndTime(req.endTime());
+
+        // 4) 저장
+        scheduleRepo.save(s);
+
+        // 5) 겹침 목록(본인 제외)
+        OffsetDateTime start = s.getStartTime();
+        OffsetDateTime end   = s.getEndTime();
+        List<Long> overlappedIds = scheduleRepo.findOverlapsOf(groupId, s.getId(), start, end)
+                .stream().map(Schedule::getId).toList();
+
+        // CreateRes 재사용
+        return new ScheduleDto.CreateRes(s.getId(), overlappedIds);
+    }
+
+    @Transactional
+    public void delete(Long groupId, Long scheduleId, Long memberId) {
+        Schedule s = scheduleRepo.findByIdAndGroupId(scheduleId, groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "schedule not found"));
+
+        // 권한 검증 (예시: 작성자만 삭제)
+        if (s.getCreatedBy() != null && !s.getCreatedBy().equals(memberId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "only creator can delete this schedule");
+        }
+
+        // 참여자 정리(캐스케이드가 설정돼 있으면 불필요)
+        spRepo.deleteByScheduleId(scheduleId);
+
+        scheduleRepo.delete(s);
+    }
+
     // ==========================
     // 내부 유틸
     // ==========================
 
     private void upsertAttendance(Long scheduleId, Long memberId, ScheduleParticipantStatus status) {
         // exists → update, not exists → insert (간단·안전)
-        var opt = spRepo.findAll().stream() // NOTE: 실무에서는 PK/복합키로 조회하는 메서드를 레포에 추가하세요.
-                .filter(x -> x.getScheduleId().equals(scheduleId) && x.getMemberId().equals(memberId))
-                .findFirst();
+        var opt = spRepo.findByScheduleIdAndMemberId(scheduleId, memberId);
 
         ScheduleParticipant sp = opt.orElseGet(() ->
                 ScheduleParticipant.builder()
@@ -170,4 +221,5 @@ public class ScheduleService {
     private void validateGroupMemberBySchedule(Long scheduleId, Long memberId) {
         // TODO: schedule → groupId 로딩 후 validateGroupMember(groupId, memberId)
     }
+
 }

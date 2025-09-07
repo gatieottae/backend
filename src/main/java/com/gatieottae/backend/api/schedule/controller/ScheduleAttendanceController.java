@@ -1,11 +1,12 @@
 package com.gatieottae.backend.api.schedule.controller;
 
-import com.gatieottae.backend.api.schedule.dto.ScheduleDto;
 import com.gatieottae.backend.service.schedule.ScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,14 +16,16 @@ public class ScheduleAttendanceController {
 
     private final ScheduleService scheduleService;
 
-    @Operation(summary = "참여 상태 변경", description = "GOING/NOT_GOING/TENTATIVE")
+    public record PutReq(@NotBlank String status) {}
+
+    @Operation(summary = "참여 상태 변경", description = "허용: GOING / NOT_GOING / TENTATIVE")
     @PutMapping("/attendance")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void setAttendance(
+    public ResponseEntity<Void> setAttendance(
             @PathVariable Long scheduleId,
-            @Valid @RequestBody ScheduleDto.AttendanceReq req,
-            @RequestHeader("X-Member-Id") Long me
+            @Valid @RequestBody PutReq body,
+            @AuthenticationPrincipal(expression = "id") Long memberId
     ) {
-        scheduleService.setAttendance(scheduleId, me, req.status());
+        scheduleService.setAttendance(scheduleId, memberId, body.status());
+        return ResponseEntity.noContent().build();
     }
 }

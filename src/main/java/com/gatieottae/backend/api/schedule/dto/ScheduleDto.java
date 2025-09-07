@@ -3,6 +3,8 @@ package com.gatieottae.backend.api.schedule.dto;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
+import lombok.Builder;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -80,4 +82,12 @@ public class ScheduleDto {
                 String displayName
         ) {}
     }
+
+    public record UpdateReq(
+            String title,
+            String description,
+            String location,
+            OffsetDateTime startTime,
+            OffsetDateTime endTime
+    ) {}
 }
