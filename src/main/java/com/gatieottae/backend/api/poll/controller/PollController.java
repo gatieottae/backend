@@ -111,4 +111,30 @@ public class PollController {
         pollService.close(pollId, memberId);
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "투표 목록 조회")
+    @GetMapping
+    public ResponseEntity<java.util.List<PollDto.ListItem>> list(
+            @RequestParam Long groupId,
+            @AuthenticationPrincipal(expression = "id") Long memberId
+    ) {
+        return ResponseEntity.ok(pollService.list(groupId, memberId));
+    }
+
+    @Operation(
+            summary = "투표 취소(언투표)",
+            responses = {
+                    @ApiResponse(responseCode = "204", description = "취소 완료"),
+                    @ApiResponse(responseCode = "404", description = "poll not found"),
+                    @ApiResponse(responseCode = "409", description = "poll closed")
+            }
+    )
+    @DeleteMapping("/{pollId}/vote")
+    public ResponseEntity<Void> unvote(
+            @PathVariable Long pollId,
+            @AuthenticationPrincipal(expression = "id") Long memberId
+    ) {
+        pollService.unvote(pollId, memberId);
+        return ResponseEntity.noContent().build();
+    }
 }
