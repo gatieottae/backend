@@ -134,7 +134,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --  - OPEN, CLOSED
 -- ============================================================
 DO $$ BEGIN
-    CREATE TYPE poll_status AS ENUM ('OPEN','CLOSED');
+    CREATE TYPE PollStatus AS ENUM ('OPEN','CLOSED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS poll (
                                     category_id     BIGINT       NOT NULL REFERENCES poll_category(id),
                                     title           VARCHAR(200) NOT NULL,
                                     description     TEXT,
-                                    status          poll_status  NOT NULL DEFAULT 'OPEN',
+                                    status          PollStatus  NOT NULL DEFAULT 'OPEN',
                                     closes_at       TIMESTAMPTZ,                       -- 마감 시각(선택)
                                     created_by      BIGINT       NOT NULL,             -- 생성자 member_id
                                     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

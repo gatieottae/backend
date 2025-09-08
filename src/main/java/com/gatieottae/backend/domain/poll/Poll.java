@@ -40,8 +40,7 @@ public class Poll {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status", nullable = false, columnDefinition = "gatieottae.poll_status")
+    @Column(name = "status", nullable = false)
     private PollStatus status;
 
     @Column(name = "closes_at")
