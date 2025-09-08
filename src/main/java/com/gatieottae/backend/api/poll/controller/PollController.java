@@ -137,4 +137,26 @@ public class PollController {
         pollService.unvote(pollId, memberId);
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "투표 수정(부분 수정)")
+    @PatchMapping("/{pollId}")
+    public ResponseEntity<Void> update(
+            @PathVariable Long pollId,
+            @RequestBody @Valid PollDto.UpdateReq req,
+            @AuthenticationPrincipal(expression = "id") Long memberId
+    ) {
+        pollService.update(pollId, memberId, req);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "투표 삭제")
+    @DeleteMapping("/{pollId}")
+    public ResponseEntity<Void> delete(
+            @PathVariable Long pollId,
+            @AuthenticationPrincipal(expression = "id") Long memberId
+    ) {
+        pollService.delete(pollId, memberId);
+        return ResponseEntity.noContent().build();
+    }
+
 }

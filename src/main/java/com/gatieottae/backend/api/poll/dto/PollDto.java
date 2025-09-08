@@ -79,4 +79,22 @@ public class PollDto {
                 Integer votes
         ) {}
     }
+
+    @Schema(description = "투표 수정 요청 (부분 수정)")
+    public record UpdateReq(
+            @Schema(description="제목", example="제목 변경") String title,
+            @Schema(description="설명") String description,
+            @Schema(description="마감 시각", example="2025-09-10T18:00:00+09:00") OffsetDateTime closesAt,
+            @Schema(description="카테고리 코드", example="FOOD") String categoryCode,
+            @Schema(description="옵션 upsert (선택). 투표가 존재하면 옵션 수정은 거부")
+            List<OptionUpsert> options
+    ) {
+        public record OptionUpsert(
+                @Schema(description="옵션 ID(신규면 null)") Long id,
+                @Schema(description="옵션 내용") String content,
+                @Schema(description="정렬값(선택)") Integer sortOrder
+        ) {}
+    }
+
+
 }

@@ -94,7 +94,7 @@ public class PollService {
 
         List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
         for (PollOption opt : options) {
-            long cnt = voteRepo.countByPollIdAndOptionId(pollId, opt.getId());
+            long cnt = voteRepo.countByPoll_IdAndOption_Id(pollId, opt.getId());
             boolean isMine = (myVote != null) && myVote.getOption().getId().equals(opt.getId());
             list.add(new PollDto.ResultsRes.OptionResult(opt.getId(), opt.getContent(), cnt, isMine));
         }
@@ -144,7 +144,7 @@ public class PollService {
 
         // 내 투표 맵 (pollId → optionId)
         var myVotes = new java.util.HashMap<Long, Long>();
-        for (var v : voteRepo.findByPollIdInAndMemberId(pollIds, memberId)) {
+        for (var v : voteRepo.findByPoll_IdInAndMemberId(pollIds, memberId)) {
             myVotes.put(v.getPoll().getId(), v.getOption().getId());
         }
 
@@ -193,6 +193,112 @@ public class PollService {
         }
 
         // 2) 내 투표기록 삭제 (없어도 0건 삭제로 끝 — idempotent)
-        voteRepo.deleteByPollIdAndMemberId(pollId, memberId);
+        voteRepo.deleteByPoll_IdAndMemberId(pollId, memberId);
+    }
+
+
+    // com.gatieottae.backend.service.poll.PollService
+
+    @Transactional
+    public void update(Long pollId, Long memberId, PollDto.UpdateReq req) {
+        Poll poll = pollRepo.findById(pollId)
+                .orElseThrow(() -> new NotFoundException("poll not found"));
+
+        // 권한: 생성자만
+        if (!poll.getCreatedBy().equals(memberId)) {
+            throw new ConflictException("no permission");
+        }
+        if (poll.getStatus() == PollStatus.CLOSED) {
+            throw new ConflictException("poll closed");
+        }
+
+        // 필드 부분 수정
+        if (req.title() != null)       poll.setTitle(req.title().trim());
+        if (req.description() != null) poll.setDescription(req.description());
+        if (req.closesAt() != null)    poll.setClosesAt(req.closesAt());
+        if (req.categoryCode() != null && !req.categoryCode().isBlank()) {
+            var cat = categoryRepo.findByCode(req.categoryCode())
+                    .orElseThrow(() -> new ConflictException("unknown categoryCode"));
+            poll.setCategory(cat);
+        }
+
+        // 옵션 변경 가능 여부: 한 표라도 있으면 옵션 수정 금지
+        boolean hasAnyVote = voteRepo.countByPollId(pollId) > 0;
+        if (req.options() != null) {
+            if (hasAnyVote) {
+                throw new ConflictException("cannot change options after votes exist");
+            }
+
+            // 중복 content 방지
+            var contents = new java.util.HashSet<String>();
+            for (var o : req.options()) {
+                if (o.content() == null || o.content().isBlank()) {
+                    throw new ConflictException("option content required");
+                }
+                String key = o.content().trim().toLowerCase();
+                if (!contents.add(key)) throw new ConflictException("duplicate option content");
+            }
+
+            // upsert: 전달된 목록으로 “치환”
+            // 1) 현재 옵션 맵
+            var current = optionRepo.findByPollIdOrderBySortOrderAscIdAsc(pollId)
+                    .stream().collect(java.util.stream.Collectors.toMap(PollOption::getId, x -> x));
+
+            // 2) 남길/수정할/새로 추가할 옵션 처리
+            var keepIds = new java.util.HashSet<Long>();
+            int order = 0;
+            OffsetDateTime now = OffsetDateTime.now();
+            for (var in : req.options()) {
+                if (in.id() != null && current.containsKey(in.id())) {
+                    // update
+                    var opt = current.get(in.id());
+                    opt.setContent(in.content().trim());
+                    opt.setSortOrder(in.sortOrder() != null ? in.sortOrder() : order);
+                    opt.setUpdatedAt(now);
+                    keepIds.add(in.id());
+                } else {
+                    // insert
+                    var newOpt = PollOption.builder()
+                            .poll(poll)
+                            .content(in.content().trim())
+                            .sortOrder(in.sortOrder() != null ? in.sortOrder() : order)
+                            .createdAt(now)
+                            .updatedAt(now)
+                            .build();
+                    optionRepo.save(newOpt);
+                    // 새로 생성한 ID는 keepIds에 굳이 넣지 않아도 됨 (아래 삭제는 current만 대상으로)
+                }
+                order++;
+            }
+
+            // 3) 전달되지 않은 기존 옵션은 삭제
+            for (var entry : current.entrySet()) {
+                if (!keepIds.contains(entry.getKey())) {
+                    optionRepo.delete(entry.getValue());
+                }
+            }
+        }
+
+        poll.setUpdatedAt(OffsetDateTime.now());
+    }
+
+    @Transactional
+    public void delete(Long pollId, Long memberId) {
+        Poll poll = pollRepo.findById(pollId)
+                .orElseThrow(() -> new NotFoundException("poll not found"));
+
+        // 권한: 생성자만
+        if (!poll.getCreatedBy().equals(memberId)) {
+            throw new ConflictException("no permission");
+        }
+
+        // 투표가 존재하면 삭제 금지 (필요시 soft delete로 바꿀 수 있음)
+        boolean hasAnyVote = voteRepo.countByPollId(pollId) > 0;
+        if (hasAnyVote) throw new ConflictException("cannot delete poll after votes exist");
+
+        // 옵션/투표는 FK cascade 또는 수동 정리
+        voteRepo.deleteByPollId(pollId); // 안전하게 정리
+        optionRepo.deleteByPollId(pollId);
+        pollRepo.delete(poll);
     }
 }

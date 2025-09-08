@@ -9,22 +9,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
-
 public interface PollVoteRepository extends JpaRepository<PollVote, Long> {
 
+    // 단건 조회
     Optional<PollVote> findByPoll_IdAndMemberId(Long pollId, Long memberId);
 
-    long countByPollIdAndOptionId(Long pollId, Long id);
+    // ✅ 득표수 (연관경로)
+    long countByPoll_IdAndOption_Id(Long pollId, Long optionId);
 
-    // optionId별 득표수
+    // ✅ 여러 poll에 대한 내 투표
+    List<PollVote> findByPoll_IdInAndMemberId(List<Long> pollIds, Long memberId);
+
+    void deleteByPoll_IdAndMemberId(Long pollId, Long memberId);
+
+    // 집계는 네이티브/JPQL 사용 – 그대로 OK
     @Query("select v.option.id as optionId, count(v.id) as cnt " +
             "from PollVote v where v.option.id in :optionIds group by v.option.id")
     List<Object[]> countByOptionIds(@Param("optionIds") List<Long> optionIds);
-
-    // 내 투표(여러 poll에 대해 한 번에)
-    List<PollVote> findByPollIdInAndMemberId(List<Long> pollIds, Long memberId);
-
-    void deleteByPollIdAndMemberId(Long pollId, Long memberId);
 
     @Modifying
     @Transactional
@@ -38,4 +39,7 @@ public interface PollVoteRepository extends JpaRepository<PollVote, Long> {
                     @Param("optionId") Long optionId,
                     @Param("memberId") Long memberId);
 
+
+    long countByPollId(Long pollId);
+    void deleteByPollId(Long pollId);
 }
