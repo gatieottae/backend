@@ -60,6 +60,9 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'            // JUnit 런타임
     testImplementation 'org.assertj:assertj-core:3.26.0'                   // AssertJ
     testImplementation 'com.h2database:h2'                                  // H2 인메모리 DB
+
+    // Redis
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis' // Lettuce 기본 포함
 }
 
 tasks.named('test') {
