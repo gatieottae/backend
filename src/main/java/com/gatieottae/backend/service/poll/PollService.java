@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,14 +82,14 @@ public class PollService {
         if (poll.getStatus() != PollStatus.OPEN) {
             throw new ConflictException("poll closed");
         }
-        // 옵션이 해당 poll 소속인지 검증 (권장)
+
         PollOption opt = optionRepo.findById(optionId)
                 .orElseThrow(() -> new NotFoundException("option not found"));
         if (!opt.getPoll().getId().equals(pollId)) {
             throw new ConflictException("option not in this poll");
         }
 
-        // ✅ 캐시 정확도를 위해 "기존 내 선택"을 미리 읽어둠
+        // 캐시 정확도를 위해 커밋 전에 "기존 내 선택"을 읽어둔다
         Long previousOptionId = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
                 .map(v -> v.getOption().getId())
                 .orElse(null);
@@ -94,9 +97,11 @@ public class PollService {
         // DB upsert
         voteRepo.upsertVote(pollId, optionId, memberId);
 
-        // ✅ 트랜잭션 내에서 예외 없이 여기까지 오면 캐시 갱신
-        //    - 같은 옵션으로 교체한 경우(previous==new)에도 호출해 두면 안전
-        voteCache.applyVote(pollId, optionId, memberId, previousOptionId);
+
+        final long pId = pollId, mId = memberId, optId = optionId;
+        final Long prev = previousOptionId;
+        runAfterCommit(() -> voteCache.applyVote(pId, optId, mId, prev));
+
     }
 
     @Transactional(readOnly = true)
@@ -166,23 +171,6 @@ public class PollService {
         );
     }
 
-    @Transactional
-    public void close(Long pollId, Long memberId) {
-        Poll poll = pollRepo.findById(pollId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
-        if (poll.getStatus() == PollStatus.CLOSED) return;
-        // 권한 체크: 생성자만 마감하도록 할지, OWNER/ADMIN만 가능하도록 할지
-        poll.setStatus(PollStatus.CLOSED);
-        poll.setUpdatedAt(OffsetDateTime.now());
-
-        // 캐시 flush 로직: 현 단계에서는 캐시 삭제만
-        try {
-            voteCache.evict(pollId);
-        } catch (Exception e) {
-            log.warn("failed to evict vote cache for poll {}", pollId, e);
-            // evict 실패해도 트랜잭션 실패로 만들 필요는 X
-        }
-    }
 
     @Transactional(readOnly = true)
     public List<PollDto.ListItem> list(Long groupId, Long memberId) {
@@ -248,32 +236,35 @@ public class PollService {
     }
 
     @Transactional
-    public void unvote(Long pollId, Long memberId) {
-        // 1) pollRepo에서 Poll을 가져와 상태 체크
+    public void close(Long pollId, Long memberId) {
         Poll poll = pollRepo.findById(pollId)
-                .orElseThrow(() -> new NotFoundException("poll not found"));
-        if (poll.getStatus() != PollStatus.OPEN) {
-            throw new ConflictException("poll closed");
-        }
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
+        if (poll.getStatus() == PollStatus.CLOSED) return;
 
-        // ✅ 내 기존 선택을 확인 (없으면 멱등하게 종료)
-        var myVoteOpt = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
-                .map(v -> v.getOption().getId())
-                .orElse(null);
+        poll.setStatus(PollStatus.CLOSED);
+        poll.setUpdatedAt(OffsetDateTime.now());
 
-        if (myVoteOpt == null) {
-            return; // 이미 투표 안 한 상태 → 멱등
-        }
-
-        // DB 삭제
-        voteRepo.deleteByPollIdAndMemberId(pollId, memberId);
-
-        // ✅ 캐시 감소 반영
-        voteCache.unvote(pollId, myVoteOpt, memberId);
+        final long pId = pollId;
+        runAfterCommit(() -> voteCache.evict(pId));
     }
 
+    @Transactional
+    public void unvote(Long pollId, Long memberId) {
+        Poll poll = pollRepo.findById(pollId)
+                .orElseThrow(() -> new NotFoundException("poll not found"));
+        if (poll.getStatus() != PollStatus.OPEN) throw new ConflictException("poll closed");
 
-    // com.gatieottae.backend.service.poll.PollService
+        Long myOptionId = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
+                .map(v -> v.getOption().getId())
+                .orElse(null);
+        if (myOptionId == null) return; // 멱등
+
+        voteRepo.deleteByPollIdAndMemberId(pollId, memberId);
+
+        final long pId = pollId, mId = memberId;
+        final long prevOpt = myOptionId;
+        runAfterCommit(() -> voteCache.unvote(pId, prevOpt, mId));
+    }
 
     @Transactional
     public void update(Long pollId, Long memberId, PollDto.UpdateReq req) {
@@ -376,5 +367,21 @@ public class PollService {
         voteRepo.deleteByPollId(pollId); // 안전하게 정리
         optionRepo.deleteByPollId(pollId);
         pollRepo.delete(poll);
+    }
+
+    private void runAfterCommit(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() {
+                    try { task.run(); }
+                    catch (Exception e) {
+                        log.warn("afterCommit task failed", e);
+                    }
+                }
+            });
+        } else {
+            // 동기화가 비활성인 경우: 안전하게 동기 실행(테스트/비표준 컨텍스트 대비)
+            try { task.run(); } catch (Exception e) { log.warn("task failed (no TX sync)", e); }
+        }
     }
 }
