@@ -1,4 +1,4 @@
-package com.gatieottae.backend.infra;
+package com.gatieottae.backend.infra.redis;
 
 import com.gatieottae.backend.infra.redis.VoteCacheService;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +27,8 @@ public class VoteCacheDebugController {
             @RequestParam long memberId,
             @RequestParam long optionId
     ) {
-        voteCache.applyVote(pollId, memberId, optionId);
+        Long prev = voteCache.getMemberChoice(pollId, memberId);
+        voteCache.applyVote(pollId, optionId, memberId, prev);
         return ResponseEntity.noContent().build();
     }
 
@@ -36,7 +37,10 @@ public class VoteCacheDebugController {
             @RequestParam long pollId,
             @RequestParam long memberId
     ) {
-        voteCache.unvote(pollId, memberId);
+        Long prev = voteCache.getMemberChoice(pollId, memberId);
+        if (prev != null) {
+            voteCache.unvote(pollId, prev, memberId);
+        }
         return ResponseEntity.noContent().build();
     }
 

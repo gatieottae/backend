@@ -9,16 +9,12 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 투표 집계를 위한 Redis 접근 레이어.
- * [핵심 연산]
- *  - applyVote(pollId, memberId, optionId): 교체/신규 투표에 따라 HINCRBY +/- 수행
- *  - unvote(pollId, memberId): 사용자의 기존 선택이 있으면 해당 옵션 카운트를 -1
- *  - getCounts(pollId): 현 시점 옵션별 카운트 맵 조회
- *  - getMemberChoice(pollId, memberId): 사용자의 현재 선택 조회
+ * 투표 집계 캐시 레이어.
  *
- * 주의: 이 레이어는 "캐시/성능"을 위한 것이며,
- *       최종 정합성은 DB 트랜잭션 로직(PollService)에서 보장하는 구조가 좋습니다.
- *       실제 연결은 3단계에서 PollService에 붙입니다.
+ * - counts:  H(poll:{id}:counts)   field=optionId(String), value=count(String)
+ * - choice:  K(poll:{id}:member:{memberId}) -> optionId(String)
+ *
+ * PollService 트랜잭션 로직과 호환되도록 시그니처를 맞춰두었습니다.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,63 +22,9 @@ public class VoteCacheService {
 
     private final StringRedisTemplate redis;
 
-    /** 사용자의 기존 선택을 읽어옵니다. 없으면 null */
-    public Long getMemberChoice(long pollId, long memberId) {
-        String key = VoteCacheKeys.memberChoiceKey(pollId, memberId);
-        String val = redis.opsForValue().get(key);
-        if (val == null) return null;
-        try {
-            return Long.parseLong(val);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
+    /* ---------------------- 조회 유틸 ---------------------- */
 
-    /**
-     * 투표 반영(교체 포함).
-     * - 이전 선택(prev)이 없으면: 새 옵션 +1
-     * - 이전 선택이 새 옵션과 다르면: prev -1, 새 옵션 +1
-     * - 이전 선택과 동일하면: 변경 없음(“같은 항목 재클릭=언투표”는 외부에서 별도로 unvote() 호출)
-     */
-    public void applyVote(long pollId, long memberId, long optionId) throws DataAccessException {
-        String countsKey = VoteCacheKeys.countsKey(pollId);
-        String memberKey = VoteCacheKeys.memberChoiceKey(pollId, memberId);
-
-        Long prev = getMemberChoice(pollId, memberId);
-
-        // 동일 선택이면 여기서는 아무것도 하지 않음(프론트/서비스에서 unvote를 따로 호출하도록)
-        if (prev != null && prev == optionId) return;
-
-        // 파이프라인처럼 보이지만 간단히 순차 처리
-        if (prev != null) {
-            // 이전 옵션 -1
-            redis.opsForHash().increment(countsKey, String.valueOf(prev), -1);
-        }
-        // 새 옵션 +1
-        redis.opsForHash().increment(countsKey, String.valueOf(optionId), 1);
-
-        // 내 선택 갱신
-        redis.opsForValue().set(memberKey, String.valueOf(optionId));
-    }
-
-    /**
-     * 언투표 처리:
-     * - 이전 선택이 있으면 해당 옵션 카운트 -1
-     * - 내 선택 키 삭제
-     * - 이전 선택이 없으면 멱등하게 아무일도 안 함
-     */
-    public void unvote(long pollId, long memberId) throws DataAccessException {
-        String countsKey = VoteCacheKeys.countsKey(pollId);
-        String memberKey = VoteCacheKeys.memberChoiceKey(pollId, memberId);
-
-        Long prev = getMemberChoice(pollId, memberId);
-        if (prev == null) return; // 멱등
-
-        redis.opsForHash().increment(countsKey, String.valueOf(prev), -1);
-        redis.delete(memberKey);
-    }
-
-    /** 현 시점 옵션별 카운트 맵 */
+    /** 현 시점 옵션별 카운트 맵 조회 (없으면 empty) */
     public Map<Long, Long> getCounts(long pollId) {
         String countsKey = VoteCacheKeys.countsKey(pollId);
         Map<Object, Object> raw = redis.opsForHash().entries(countsKey);
@@ -94,16 +36,113 @@ public class VoteCacheService {
         ));
     }
 
-    /** 특정 옵션 카운트를 명시적으로 보정(테스트/관리용) */
-    public void setCount(long pollId, long optionId, long count) {
-        String countsKey = VoteCacheKeys.countsKey(pollId);
-        redis.opsForHash().put(countsKey, String.valueOf(optionId), String.valueOf(count));
+    /** 사용자의 현재 선택 조회 (없으면 null) */
+    public Long getMemberChoice(long pollId, long memberId) {
+        String key = VoteCacheKeys.memberChoiceKey(pollId, memberId);
+        String val = redis.opsForValue().get(key);
+        if (val == null) return null;
+        try {
+            return Long.parseLong(val);
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
     }
 
-    /** 해당 poll의 캐시 데이터를 모두 비웁니다(테스트/마감 플러시 전 초기화 등). */
-    public void clearAll(long pollId) {
-        redis.delete(VoteCacheKeys.countsKey(pollId));
-        // member 키는 패턴 삭제가 필요하지만 Redis 단건 delete는 패턴을 직접 못 쓰므로
-        // 운영에서는 SCAN으로 지우거나, 마감시점에 TTL로 자연 만료시키는 전략을 권장합니다.
+    /* ---------------------- PollService가 기대하는 API ---------------------- */
+
+    /**
+     * 투표 반영(교체 포함).
+     * PollService에서 DB upsert 성공 후 호출됩니다.
+     *
+     * @param pollId           폴 ID
+     * @param newOptionId      새로 선택된 옵션 ID
+     * @param memberId         사용자 ID
+     * @param previousOptionId 직전 사용자가 고르고 있던 옵션 ID (없으면 null)
+     */
+    public void applyVote(long pollId, long newOptionId, long memberId, Long previousOptionId)
+            throws DataAccessException {
+
+        String countsKey = VoteCacheKeys.countsKey(pollId);
+        String memberKey = VoteCacheKeys.memberChoiceKey(pollId, memberId);
+
+        // 이전과 동일 선택이면 카운트 변화 없음 (DB는 upsert로 동일 상태 유지)
+        if (previousOptionId != null && previousOptionId.equals(newOptionId)) {
+            // 그래도 멱등하게 choice 키는 세팅해 둔다.
+            redis.opsForValue().set(memberKey, String.valueOf(newOptionId));
+            return;
+        }
+
+        if (previousOptionId != null) {
+            // 이전 옵션 -1
+            redis.opsForHash().increment(countsKey, String.valueOf(previousOptionId), -1);
+        }
+        // 새 옵션 +1
+        redis.opsForHash().increment(countsKey, String.valueOf(newOptionId), 1);
+
+        // 내 선택 갱신
+        redis.opsForValue().set(memberKey, String.valueOf(newOptionId));
     }
+
+    /**
+     * 언투표 처리.
+     * PollService에서 DB 삭제 성공 후 호출됩니다.
+     *
+     * @param pollId   폴 ID
+     * @param optionId 방금 해제된(이전) 옵션 ID
+     * @param memberId 사용자 ID
+     */
+    public void unvote(long pollId, long optionId, long memberId) throws DataAccessException {
+        String countsKey = VoteCacheKeys.countsKey(pollId);
+        String memberKey = VoteCacheKeys.memberChoiceKey(pollId, memberId);
+
+        // 해당 옵션 카운트 -1
+        redis.opsForHash().increment(countsKey, String.valueOf(optionId), -1);
+        // 내 선택 키 제거
+        redis.delete(memberKey);
+    }
+
+    /**
+     * 결과 캐시 조회 (없으면 Optional.empty()).
+     * - counts가 비어 있으면 "캐시 미스"로 간주합니다.
+     * - myOptionId는 없을 수도 있습니다(null 허용).
+     */
+    public Optional<CachedResults> tryGetResults(long pollId, long memberId) {
+        Map<Long, Long> counts = getCounts(pollId);
+        if (counts.isEmpty()) return Optional.empty(); // 캐시 미스
+
+        Long my = getMemberChoice(pollId, memberId);
+        return Optional.of(new CachedResults(counts, my));
+    }
+
+    /**
+     * 캐시 워밍업.
+     * - DB에서 계산한 counts와 (가능하면) 내 선택을 캐시에 적재
+     * - TTL 전략이 필요하면 여기에서 expire 설정을 추가하세요.
+     */
+    public void warmUp(long pollId, Map<Long, Long> counts, Long memberId, Long myOptionId) {
+        if (counts != null && !counts.isEmpty()) {
+            String countsKey = VoteCacheKeys.countsKey(pollId);
+            Map<String, String> asString = new HashMap<>();
+            counts.forEach((k, v) -> asString.put(String.valueOf(k), String.valueOf(v)));
+            redis.opsForHash().putAll(countsKey, new HashMap<>(asString));
+        }
+        if (memberId != null && myOptionId != null) {
+            String memberKey = VoteCacheKeys.memberChoiceKey(pollId, memberId);
+            redis.opsForValue().set(memberKey, String.valueOf(myOptionId));
+        }
+    }
+
+    /**
+     * 캐시 비움 (마감 시 등).
+     * - counts 해시만 제거합니다.
+     * - member 키들은 TTL 전략을 권장(대량 SCAN 삭제는 운영에서 별도 처리)
+     */
+    public void evict(long pollId) {
+        redis.delete(VoteCacheKeys.countsKey(pollId));
+    }
+
+    /* ---------------------- 보조 타입 ---------------------- */
+
+    /** results() 캐시 응답 컨테이너 */
+    public record CachedResults(Map<Long, Long> counts, Long myOptionId) {}
 }

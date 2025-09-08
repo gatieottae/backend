@@ -4,8 +4,10 @@ import com.gatieottae.backend.api.poll.dto.PollDto;
 import com.gatieottae.backend.common.exception.ConflictException;
 import com.gatieottae.backend.common.exception.NotFoundException;
 import com.gatieottae.backend.domain.poll.*;
+import com.gatieottae.backend.infra.redis.VoteCacheService;
 import com.gatieottae.backend.repository.poll.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PollService {
@@ -23,6 +26,7 @@ public class PollService {
     private final PollCategoryRepository categoryRepo;
     private final PollOptionRepository optionRepo;
     private final PollVoteRepository voteRepo;
+    private final VoteCacheService voteCache;
 
     @Transactional
     public PollDto.CreateRes create(Long memberId, PollDto.CreateReq req) {
@@ -81,21 +85,73 @@ public class PollService {
         if (!opt.getPoll().getId().equals(pollId)) {
             throw new ConflictException("option not in this poll");
         }
+
+        // ✅ 캐시 정확도를 위해 "기존 내 선택"을 미리 읽어둠
+        Long previousOptionId = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
+                .map(v -> v.getOption().getId())
+                .orElse(null);
+
+        // DB upsert
         voteRepo.upsertVote(pollId, optionId, memberId);
+
+        // ✅ 트랜잭션 내에서 예외 없이 여기까지 오면 캐시 갱신
+        //    - 같은 옵션으로 교체한 경우(previous==new)에도 호출해 두면 안전
+        voteCache.applyVote(pollId, optionId, memberId, previousOptionId);
     }
 
     @Transactional(readOnly = true)
     public PollDto.ResultsRes results(Long pollId, Long memberId) {
+        // 1) ✅ 캐시 먼저 시도
+        var cached = voteCache.tryGetResults(pollId, memberId);
+        if (cached.isPresent()) {
+            var c = cached.get();
+
+            // 옵션 목록은 DB에서 정렬/문구를 가져오되, 득표수는 캐시의 count 사용
+            Poll poll = pollRepo.findById(pollId)
+                    .orElseThrow(() -> new NotFoundException("poll not found"));
+
+            var options = optionRepo.findByPollIdOrderBySortOrderAscIdAsc(pollId);
+            List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
+            for (PollOption opt : options) {
+                long cnt = c.counts().getOrDefault(opt.getId(), 0L);
+                boolean isMine = c.myOptionId() != null && c.myOptionId().equals(opt.getId());
+                list.add(new PollDto.ResultsRes.OptionResult(opt.getId(), opt.getContent(), cnt, isMine));
+            }
+
+            return new PollDto.ResultsRes(
+                    poll.getId(),
+                    poll.getTitle(),
+                    poll.getCategory().getCode(),
+                    poll.getStatus().name(),
+                    poll.getClosesAt(),
+                    list,
+                    c.myOptionId() != null
+            );
+        }
+
+        // 2) ❄️ 캐시에 없으면 DB로 계산 (기존 로직)
         Poll poll = pollRepo.findById(pollId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
+                .orElseThrow(() -> new NotFoundException("poll not found"));
 
         var options = optionRepo.findByPollIdOrderBySortOrderAscIdAsc(pollId);
         var myVote = voteRepo.findByPoll_IdAndMemberId(pollId, memberId).orElse(null);
 
+        // optionId -> count 맵 구성
+        var counts = new java.util.HashMap<Long, Long>();
+        for (PollOption opt : options) {
+            long cnt = voteRepo.countByPollIdAndOptionId(pollId, opt.getId());
+            counts.put(opt.getId(), cnt);
+        }
+        Long myOptionId = (myVote == null) ? null : myVote.getOption().getId();
+
+        // 3) ✅ 캐시 워밍업
+        voteCache.warmUp(pollId, counts, memberId, myOptionId);
+
+        // 4) 응답 DTO 생성
         List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
         for (PollOption opt : options) {
-            long cnt = voteRepo.countByPoll_IdAndOption_Id(pollId, opt.getId());
-            boolean isMine = (myVote != null) && myVote.getOption().getId().equals(opt.getId());
+            long cnt = counts.getOrDefault(opt.getId(), 0L);
+            boolean isMine = myOptionId != null && myOptionId.equals(opt.getId());
             list.add(new PollDto.ResultsRes.OptionResult(opt.getId(), opt.getContent(), cnt, isMine));
         }
 
@@ -106,7 +162,7 @@ public class PollService {
                 poll.getStatus().name(),
                 poll.getClosesAt(),
                 list,
-                myVote != null
+                myOptionId != null
         );
     }
 
@@ -115,9 +171,17 @@ public class PollService {
         Poll poll = pollRepo.findById(pollId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
         if (poll.getStatus() == PollStatus.CLOSED) return;
-        // (선택) 권한 체크: 생성자만 마감하도록 할지, OWNER/ADMIN만 가능하도록 할지
+        // 권한 체크: 생성자만 마감하도록 할지, OWNER/ADMIN만 가능하도록 할지
         poll.setStatus(PollStatus.CLOSED);
         poll.setUpdatedAt(OffsetDateTime.now());
+
+        // 캐시 flush 로직: 현 단계에서는 캐시 삭제만
+        try {
+            voteCache.evict(pollId);
+        } catch (Exception e) {
+            log.warn("failed to evict vote cache for poll {}", pollId, e);
+            // evict 실패해도 트랜잭션 실패로 만들 필요는 X
+        }
     }
 
     @Transactional(readOnly = true)
@@ -192,8 +256,20 @@ public class PollService {
             throw new ConflictException("poll closed");
         }
 
-        // 2) 내 투표기록 삭제 (없어도 0건 삭제로 끝 — idempotent)
-        voteRepo.deleteByPoll_IdAndMemberId(pollId, memberId);
+        // ✅ 내 기존 선택을 확인 (없으면 멱등하게 종료)
+        var myVoteOpt = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
+                .map(v -> v.getOption().getId())
+                .orElse(null);
+
+        if (myVoteOpt == null) {
+            return; // 이미 투표 안 한 상태 → 멱등
+        }
+
+        // DB 삭제
+        voteRepo.deleteByPollIdAndMemberId(pollId, memberId);
+
+        // ✅ 캐시 감소 반영
+        voteCache.unvote(pollId, myVoteOpt, memberId);
     }
 
 
