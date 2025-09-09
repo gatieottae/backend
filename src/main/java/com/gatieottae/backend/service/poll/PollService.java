@@ -100,7 +100,8 @@ public class PollService {
 
         final long pId = pollId, mId = memberId, optId = optionId;
         final Long prev = previousOptionId;
-        runAfterCommit(() -> voteCache.applyVote(pId, optId, mId, prev));
+        final OffsetDateTime closesAt = poll.getClosesAt();
+        runAfterCommit(() -> voteCache.applyVote(pId, optId, mId, prev, closesAt));
 
     }
 
@@ -150,7 +151,7 @@ public class PollService {
         Long myOptionId = (myVote == null) ? null : myVote.getOption().getId();
 
         // 3) ✅ 캐시 워밍업
-        voteCache.warmUp(pollId, counts, memberId, myOptionId);
+        voteCache.warmUp(pollId, counts, memberId, myOptionId, poll.getClosesAt());
 
         // 4) 응답 DTO 생성
         List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
@@ -245,7 +246,8 @@ public class PollService {
         poll.setUpdatedAt(OffsetDateTime.now());
 
         final long pId = pollId;
-        runAfterCommit(() -> voteCache.evict(pId));
+        // ✅ counts 해시만 즉시 삭제. (member choice는 TTL로 자연 만료)
+        runAfterCommit(() -> voteCache.evictOnClose(pId));
     }
 
     @Transactional
@@ -263,7 +265,8 @@ public class PollService {
 
         final long pId = pollId, mId = memberId;
         final long prevOpt = myOptionId;
-        runAfterCommit(() -> voteCache.unvote(pId, prevOpt, mId));
+        final OffsetDateTime closesAt = poll.getClosesAt();
+        runAfterCommit(() -> voteCache.unvote(pId, prevOpt, mId, closesAt));
     }
 
     @Transactional

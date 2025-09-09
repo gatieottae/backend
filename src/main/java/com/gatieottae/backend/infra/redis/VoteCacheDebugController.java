@@ -56,4 +56,10 @@ public class VoteCacheDebugController {
     ) {
         return ResponseEntity.ok(voteCache.getMemberChoice(pollId, memberId));
     }
+
+    @GetMapping("/ttl")
+    public ResponseEntity<Long> ttl(@RequestParam long pollId) {
+        Long ttl = voteCache.getTtlForCounts(pollId);
+        return ResponseEntity.ok(ttl);
+    }
 }
