@@ -172,68 +172,82 @@ public class PollService {
         );
     }
 
-
     @Transactional(readOnly = true)
     public List<PollDto.ListItem> list(Long groupId, Long memberId) {
         var polls = pollRepo.findByGroupIdOrderByCreatedAtDesc(groupId);
         if (polls.isEmpty()) return List.of();
 
-        // pollIds / optionIds 수집
         var pollIds = polls.stream().map(Poll::getId).toList();
-        var allOptions = polls.stream()
-                .flatMap(p -> p.getOptions().stream())
-                .toList();
-        var optionIds = allOptions.stream().map(PollOption::getId).toList();
-
-        // optionId → 득표수 맵
-        var counts = new java.util.HashMap<Long, Integer>();
-        if (!optionIds.isEmpty()) {
-            for (Object[] row : voteRepo.countByOptionIds(optionIds)) {
-                Long optionId = (Long) row[0];
-                Long cnt = (Long) row[1];
-                counts.put(optionId, cnt.intValue());
-            }
-        }
-
-        // 내 투표 맵 (pollId → optionId)
         var myVotes = new java.util.HashMap<Long, Long>();
         for (var v : voteRepo.findByPoll_IdInAndMemberId(pollIds, memberId)) {
             myVotes.put(v.getPoll().getId(), v.getOption().getId());
         }
 
-        // pollId → 총 투표자 수(사람 수). 단일선택이므로 poll_vote by pollId count
-        var totalPerPoll = new java.util.HashMap<Long, Integer>();
-        // 간단히 option 합으로 구함
-        for (var p : polls) {
-            int sum = p.getOptions().stream()
-                    .mapToInt(o -> counts.getOrDefault(o.getId(), 0))
-                    .sum();
-            totalPerPoll.put(p.getId(), sum);
-        }
+        var result = new ArrayList<PollDto.ListItem>(polls.size());
 
-        // DTO 변환
-        return polls.stream().map(p -> {
-            var optionDtos = p.getOptions().stream()
+        for (var p : polls) {
+            final long pollId = p.getId();
+            final boolean isOpen = p.getStatus() == PollStatus.OPEN;
+
+            // 캐시 먼저
+            java.util.Map<Long, Long> countsMap = null; // ← import 없으면 이렇게 fully-qualified
+            Long myChoiceFromCache = null;
+            if (isOpen) {
+                countsMap = voteCache.getCounts(pollId);
+                if (!countsMap.isEmpty()) {
+                    myChoiceFromCache = voteCache.getMemberChoice(pollId, memberId);
+                }
+            }
+
+            var options = p.getOptions().stream()
                     .sorted(java.util.Comparator.comparingInt(o -> o.getSortOrder() == null ? 0 : o.getSortOrder()))
+                    .toList();
+
+            java.util.Map<Long, Long> finalCounts;
+            Long mySelectedOptionId;
+
+            if (countsMap != null && !countsMap.isEmpty()) {
+                finalCounts = countsMap;
+                mySelectedOptionId = (myChoiceFromCache != null) ? myChoiceFromCache : myVotes.get(pollId);
+            } else {
+                finalCounts = new java.util.HashMap<>();
+                for (var opt : options) {
+                    long cnt = voteRepo.countByPollIdAndOptionId(pollId, opt.getId());
+                    finalCounts.put(opt.getId(), cnt);
+                }
+                mySelectedOptionId = myVotes.get(pollId);
+
+                if (isOpen) {
+                    voteCache.warmUp(pollId, finalCounts, memberId, mySelectedOptionId, p.getClosesAt());
+                }
+            }
+
+            int totalVoters = options.stream()
+                    .mapToInt(o -> Math.toIntExact(finalCounts.getOrDefault(o.getId(), 0L)))
+                    .sum();
+
+            var optionDtos = options.stream()
                     .map(o -> PollDto.ListItem.OptionResult.builder()
                             .id(o.getId())
                             .content(o.getContent())
-                            .votes(counts.getOrDefault(o.getId(), 0))
+                            .votes(Math.toIntExact(finalCounts.getOrDefault(o.getId(), 0L)))
                             .build())
-                    .toList(); // type: List<PollDto.ListItem.OptionResult>
+                    .toList();
 
-            return PollDto.ListItem.builder()
+            result.add(PollDto.ListItem.builder()
                     .id(p.getId())
                     .title(p.getTitle())
                     .description(p.getDescription())
-                    .categoryCode(p.getCategory().getCode()) // or getCategoryCode() 쓰는 형태면 변경
+                    .categoryCode(p.getCategory().getCode())
                     .status(p.getStatus().name())
                     .closesAt(p.getClosesAt())
-                    .totalVoters(totalPerPoll.getOrDefault(p.getId(), 0))
-                    .myVoteOptionId(myVotes.get(p.getId()))
+                    .totalVoters(totalVoters)
+                    .myVoteOptionId(mySelectedOptionId)
                     .options(optionDtos)
-                    .build();
-        }).toList();
+                    .build());
+        }
+
+        return result;
     }
 
     @Transactional
