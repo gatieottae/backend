@@ -4,17 +4,23 @@ import com.gatieottae.backend.api.poll.dto.PollDto;
 import com.gatieottae.backend.common.exception.ConflictException;
 import com.gatieottae.backend.common.exception.NotFoundException;
 import com.gatieottae.backend.domain.poll.*;
+import com.gatieottae.backend.infra.redis.VoteCacheService;
 import com.gatieottae.backend.repository.poll.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PollService {
@@ -23,6 +29,7 @@ public class PollService {
     private final PollCategoryRepository categoryRepo;
     private final PollOptionRepository optionRepo;
     private final PollVoteRepository voteRepo;
+    private final VoteCacheService voteCache;
 
     @Transactional
     public PollDto.CreateRes create(Long memberId, PollDto.CreateReq req) {
@@ -75,27 +82,82 @@ public class PollService {
         if (poll.getStatus() != PollStatus.OPEN) {
             throw new ConflictException("poll closed");
         }
-        // 옵션이 해당 poll 소속인지 검증 (권장)
+
         PollOption opt = optionRepo.findById(optionId)
                 .orElseThrow(() -> new NotFoundException("option not found"));
         if (!opt.getPoll().getId().equals(pollId)) {
             throw new ConflictException("option not in this poll");
         }
+
+        // 캐시 정확도를 위해 커밋 전에 "기존 내 선택"을 읽어둔다
+        Long previousOptionId = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
+                .map(v -> v.getOption().getId())
+                .orElse(null);
+
+        // DB upsert
         voteRepo.upsertVote(pollId, optionId, memberId);
+
+
+        final long pId = pollId, mId = memberId, optId = optionId;
+        final Long prev = previousOptionId;
+        final OffsetDateTime closesAt = poll.getClosesAt();
+        runAfterCommit(() -> voteCache.applyVote(pId, optId, mId, prev, closesAt));
+
     }
 
     @Transactional(readOnly = true)
     public PollDto.ResultsRes results(Long pollId, Long memberId) {
+        // 1) ✅ 캐시 먼저 시도
+        var cached = voteCache.tryGetResults(pollId, memberId);
+        if (cached.isPresent()) {
+            var c = cached.get();
+
+            // 옵션 목록은 DB에서 정렬/문구를 가져오되, 득표수는 캐시의 count 사용
+            Poll poll = pollRepo.findById(pollId)
+                    .orElseThrow(() -> new NotFoundException("poll not found"));
+
+            var options = optionRepo.findByPollIdOrderBySortOrderAscIdAsc(pollId);
+            List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
+            for (PollOption opt : options) {
+                long cnt = c.counts().getOrDefault(opt.getId(), 0L);
+                boolean isMine = c.myOptionId() != null && c.myOptionId().equals(opt.getId());
+                list.add(new PollDto.ResultsRes.OptionResult(opt.getId(), opt.getContent(), cnt, isMine));
+            }
+
+            return new PollDto.ResultsRes(
+                    poll.getId(),
+                    poll.getTitle(),
+                    poll.getCategory().getCode(),
+                    poll.getStatus().name(),
+                    poll.getClosesAt(),
+                    list,
+                    c.myOptionId() != null
+            );
+        }
+
+        // 2) ❄️ 캐시에 없으면 DB로 계산 (기존 로직)
         Poll poll = pollRepo.findById(pollId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
+                .orElseThrow(() -> new NotFoundException("poll not found"));
 
         var options = optionRepo.findByPollIdOrderBySortOrderAscIdAsc(pollId);
         var myVote = voteRepo.findByPoll_IdAndMemberId(pollId, memberId).orElse(null);
 
+        // optionId -> count 맵 구성
+        var counts = new java.util.HashMap<Long, Long>();
+        for (PollOption opt : options) {
+            long cnt = voteRepo.countByPollIdAndOptionId(pollId, opt.getId());
+            counts.put(opt.getId(), cnt);
+        }
+        Long myOptionId = (myVote == null) ? null : myVote.getOption().getId();
+
+        // 3) ✅ 캐시 워밍업
+        voteCache.warmUp(pollId, counts, memberId, myOptionId, poll.getClosesAt());
+
+        // 4) 응답 DTO 생성
         List<PollDto.ResultsRes.OptionResult> list = new ArrayList<>();
         for (PollOption opt : options) {
-            long cnt = voteRepo.countByPoll_IdAndOption_Id(pollId, opt.getId());
-            boolean isMine = (myVote != null) && myVote.getOption().getId().equals(opt.getId());
+            long cnt = counts.getOrDefault(opt.getId(), 0L);
+            boolean isMine = myOptionId != null && myOptionId.equals(opt.getId());
             list.add(new PollDto.ResultsRes.OptionResult(opt.getId(), opt.getContent(), cnt, isMine));
         }
 
@@ -106,18 +168,8 @@ public class PollService {
                 poll.getStatus().name(),
                 poll.getClosesAt(),
                 list,
-                myVote != null
+                myOptionId != null
         );
-    }
-
-    @Transactional
-    public void close(Long pollId, Long memberId) {
-        Poll poll = pollRepo.findById(pollId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
-        if (poll.getStatus() == PollStatus.CLOSED) return;
-        // (선택) 권한 체크: 생성자만 마감하도록 할지, OWNER/ADMIN만 가능하도록 할지
-        poll.setStatus(PollStatus.CLOSED);
-        poll.setUpdatedAt(OffsetDateTime.now());
     }
 
     @Transactional(readOnly = true)
@@ -125,79 +177,111 @@ public class PollService {
         var polls = pollRepo.findByGroupIdOrderByCreatedAtDesc(groupId);
         if (polls.isEmpty()) return List.of();
 
-        // pollIds / optionIds 수집
         var pollIds = polls.stream().map(Poll::getId).toList();
-        var allOptions = polls.stream()
-                .flatMap(p -> p.getOptions().stream())
-                .toList();
-        var optionIds = allOptions.stream().map(PollOption::getId).toList();
-
-        // optionId → 득표수 맵
-        var counts = new java.util.HashMap<Long, Integer>();
-        if (!optionIds.isEmpty()) {
-            for (Object[] row : voteRepo.countByOptionIds(optionIds)) {
-                Long optionId = (Long) row[0];
-                Long cnt = (Long) row[1];
-                counts.put(optionId, cnt.intValue());
-            }
-        }
-
-        // 내 투표 맵 (pollId → optionId)
         var myVotes = new java.util.HashMap<Long, Long>();
         for (var v : voteRepo.findByPoll_IdInAndMemberId(pollIds, memberId)) {
             myVotes.put(v.getPoll().getId(), v.getOption().getId());
         }
 
-        // pollId → 총 투표자 수(사람 수). 단일선택이므로 poll_vote by pollId count
-        var totalPerPoll = new java.util.HashMap<Long, Integer>();
-        // 간단히 option 합으로 구함
-        for (var p : polls) {
-            int sum = p.getOptions().stream()
-                    .mapToInt(o -> counts.getOrDefault(o.getId(), 0))
-                    .sum();
-            totalPerPoll.put(p.getId(), sum);
-        }
+        var result = new ArrayList<PollDto.ListItem>(polls.size());
 
-        // DTO 변환
-        return polls.stream().map(p -> {
-            var optionDtos = p.getOptions().stream()
+        for (var p : polls) {
+            final long pollId = p.getId();
+            final boolean isOpen = p.getStatus() == PollStatus.OPEN;
+
+            // 캐시 먼저
+            java.util.Map<Long, Long> countsMap = null; // ← import 없으면 이렇게 fully-qualified
+            Long myChoiceFromCache = null;
+            if (isOpen) {
+                countsMap = voteCache.getCounts(pollId);
+                if (!countsMap.isEmpty()) {
+                    myChoiceFromCache = voteCache.getMemberChoice(pollId, memberId);
+                }
+            }
+
+            var options = p.getOptions().stream()
                     .sorted(java.util.Comparator.comparingInt(o -> o.getSortOrder() == null ? 0 : o.getSortOrder()))
+                    .toList();
+
+            java.util.Map<Long, Long> finalCounts;
+            Long mySelectedOptionId;
+
+            if (countsMap != null && !countsMap.isEmpty()) {
+                finalCounts = countsMap;
+                mySelectedOptionId = (myChoiceFromCache != null) ? myChoiceFromCache : myVotes.get(pollId);
+            } else {
+                finalCounts = new java.util.HashMap<>();
+                for (var opt : options) {
+                    long cnt = voteRepo.countByPollIdAndOptionId(pollId, opt.getId());
+                    finalCounts.put(opt.getId(), cnt);
+                }
+                mySelectedOptionId = myVotes.get(pollId);
+
+                if (isOpen) {
+                    voteCache.warmUp(pollId, finalCounts, memberId, mySelectedOptionId, p.getClosesAt());
+                }
+            }
+
+            int totalVoters = options.stream()
+                    .mapToInt(o -> Math.toIntExact(finalCounts.getOrDefault(o.getId(), 0L)))
+                    .sum();
+
+            var optionDtos = options.stream()
                     .map(o -> PollDto.ListItem.OptionResult.builder()
                             .id(o.getId())
                             .content(o.getContent())
-                            .votes(counts.getOrDefault(o.getId(), 0))
+                            .votes(Math.toIntExact(finalCounts.getOrDefault(o.getId(), 0L)))
                             .build())
-                    .toList(); // type: List<PollDto.ListItem.OptionResult>
+                    .toList();
 
-            return PollDto.ListItem.builder()
+            result.add(PollDto.ListItem.builder()
                     .id(p.getId())
                     .title(p.getTitle())
                     .description(p.getDescription())
-                    .categoryCode(p.getCategory().getCode()) // or getCategoryCode() 쓰는 형태면 변경
+                    .categoryCode(p.getCategory().getCode())
                     .status(p.getStatus().name())
                     .closesAt(p.getClosesAt())
-                    .totalVoters(totalPerPoll.getOrDefault(p.getId(), 0))
-                    .myVoteOptionId(myVotes.get(p.getId()))
+                    .totalVoters(totalVoters)
+                    .myVoteOptionId(mySelectedOptionId)
                     .options(optionDtos)
-                    .build();
-        }).toList();
+                    .build());
+        }
+
+        return result;
+    }
+
+    @Transactional
+    public void close(Long pollId, Long memberId) {
+        Poll poll = pollRepo.findById(pollId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "poll not found"));
+        if (poll.getStatus() == PollStatus.CLOSED) return;
+
+        poll.setStatus(PollStatus.CLOSED);
+        poll.setUpdatedAt(OffsetDateTime.now());
+
+        final long pId = pollId;
+        // ✅ counts 해시만 즉시 삭제. (member choice는 TTL로 자연 만료)
+        runAfterCommit(() -> voteCache.evictOnClose(pId));
     }
 
     @Transactional
     public void unvote(Long pollId, Long memberId) {
-        // 1) pollRepo에서 Poll을 가져와 상태 체크
         Poll poll = pollRepo.findById(pollId)
                 .orElseThrow(() -> new NotFoundException("poll not found"));
-        if (poll.getStatus() != PollStatus.OPEN) {
-            throw new ConflictException("poll closed");
-        }
+        if (poll.getStatus() != PollStatus.OPEN) throw new ConflictException("poll closed");
 
-        // 2) 내 투표기록 삭제 (없어도 0건 삭제로 끝 — idempotent)
-        voteRepo.deleteByPoll_IdAndMemberId(pollId, memberId);
+        Long myOptionId = voteRepo.findByPoll_IdAndMemberId(pollId, memberId)
+                .map(v -> v.getOption().getId())
+                .orElse(null);
+        if (myOptionId == null) return; // 멱등
+
+        voteRepo.deleteByPollIdAndMemberId(pollId, memberId);
+
+        final long pId = pollId, mId = memberId;
+        final long prevOpt = myOptionId;
+        final OffsetDateTime closesAt = poll.getClosesAt();
+        runAfterCommit(() -> voteCache.unvote(pId, prevOpt, mId, closesAt));
     }
-
-
-    // com.gatieottae.backend.service.poll.PollService
 
     @Transactional
     public void update(Long pollId, Long memberId, PollDto.UpdateReq req) {
@@ -300,5 +384,21 @@ public class PollService {
         voteRepo.deleteByPollId(pollId); // 안전하게 정리
         optionRepo.deleteByPollId(pollId);
         pollRepo.delete(poll);
+    }
+
+    private void runAfterCommit(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() {
+                    try { task.run(); }
+                    catch (Exception e) {
+                        log.warn("afterCommit task failed", e);
+                    }
+                }
+            });
+        } else {
+            // 동기화가 비활성인 경우: 안전하게 동기 실행(테스트/비표준 컨텍스트 대비)
+            try { task.run(); } catch (Exception e) { log.warn("task failed (no TX sync)", e); }
+        }
     }
 }

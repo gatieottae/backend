@@ -19,5 +19,15 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: gatieottae-redis
+    ports:
+      - "6379:6379"
+    command: [ "redis-server", "--appendonly", "yes" ] # AOF 켜기
+    volumes:
+      - redis-data:/data
+
 volumes:
   pgdata:
+  redis-data:

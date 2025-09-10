@@ -3,6 +3,7 @@ package com.gatieottae.backend.common.exception;
 import com.gatieottae.backend.domain.group.exception.GroupException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -151,6 +152,14 @@ public class GlobalExceptionHandler {
                 "message", ex.getReason(),
                 "timestamp", OffsetDateTime.now().toString()
         ));
+    }
+
+    /* ========== 클라이언트 중단: 무시 처리 ========== */
+    @ExceptionHandler(ClientAbortException.class)
+    public ResponseEntity<Void> handleClientAbort(ClientAbortException ex) {
+        // 사용자가 전송 중에 탭을 닫는 흔한 상황. 운영 노이즈 줄이기 위해 debug 수준으로만 기록.
+        log.debug("Client aborted connection: {}", ex.getMessage());
+        return ResponseEntity.noContent().build(); // 204
     }
 
     /* ========================= Helpers ============================ */
