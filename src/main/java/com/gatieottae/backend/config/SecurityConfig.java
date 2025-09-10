@@ -40,9 +40,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
-        http.csrf(AbstractHttpConfigurer::disable);
+        http.csrf(AbstractHttpConfigurer::disable);        // HTTP CSRF 비활성 (JWT)
 
-        // ✅ CORS 적용
         http.cors(Customizer.withDefaults());
 
         http.exceptionHandling(ex -> ex
@@ -65,26 +64,35 @@ public class SecurityConfig {
                         "/swagger-ui/**",
                         "/v3/api-docs/**"
                 ).permitAll()
+                // 웹소켓 핸드셰이크는 익명 허용
+                .requestMatchers(
+                        "/ws/**",
+                        "/ws-stomp/**"
+                ).permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
         );
 
-        http.addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, memberRepository),
-                UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(
+                new JwtAuthenticationFilter(jwtTokenProvider, memberRepository),
+                UsernamePasswordAuthenticationFilter.class
+        );
 
-        http.httpBasic(AbstractHttpConfigurer::disable); // JWT라서 비활성 권장
+        http.httpBasic(AbstractHttpConfigurer::disable);
         http.formLogin(AbstractHttpConfigurer::disable);
 
         return http.build();
     }
 
-    // ✅ CORS 설정 Bean 추가
+    // CORS
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
+        // 필요하면 도메인 추가
         config.setAllowedOrigins(List.of("http://localhost:5173"));
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true); // 쿠키 허용
+        config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

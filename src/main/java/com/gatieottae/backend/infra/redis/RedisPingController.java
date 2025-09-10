@@ -1,4 +1,4 @@
-package com.gatieottae.backend.infra;
+package com.gatieottae.backend.infra.redis;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
