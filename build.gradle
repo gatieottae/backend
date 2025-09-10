@@ -63,6 +63,14 @@ dependencies {
 
     // Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis' // Lettuce 기본 포함
+
+    // websocket
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+    // 메시지 보안
+    implementation "org.springframework.security:spring-security-messaging"
+
 }
 
 tasks.named('test') {

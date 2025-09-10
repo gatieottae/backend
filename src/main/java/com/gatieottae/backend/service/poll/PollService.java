@@ -4,6 +4,7 @@ import com.gatieottae.backend.api.poll.dto.PollDto;
 import com.gatieottae.backend.common.exception.ConflictException;
 import com.gatieottae.backend.common.exception.NotFoundException;
 import com.gatieottae.backend.domain.poll.*;
+import com.gatieottae.backend.infra.redis.VoteBroadcastCoordinator;
 import com.gatieottae.backend.infra.redis.VoteCacheService;
 import com.gatieottae.backend.repository.poll.*;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class PollService {
     private final PollOptionRepository optionRepo;
     private final PollVoteRepository voteRepo;
     private final VoteCacheService voteCache;
+    private final VoteBroadcastCoordinator voteBroadcaster;
 
     @Transactional
     public PollDto.CreateRes create(Long memberId, PollDto.CreateReq req) {
@@ -101,7 +103,13 @@ public class PollService {
         final long pId = pollId, mId = memberId, optId = optionId;
         final Long prev = previousOptionId;
         final OffsetDateTime closesAt = poll.getClosesAt();
-        runAfterCommit(() -> voteCache.applyVote(pId, optId, mId, prev, closesAt));
+
+        runAfterCommit(() -> {
+            // 1) 캐시 반영
+            voteCache.applyVote(pId, optId, mId, prev, closesAt);
+            // 2) 스냅샷 브로드캐스트
+            voteBroadcaster.broadcastCountsSnapshot(poll);
+        });
 
     }
 
@@ -261,7 +269,11 @@ public class PollService {
 
         final long pId = pollId;
         // ✅ counts 해시만 즉시 삭제. (member choice는 TTL로 자연 만료)
-        runAfterCommit(() -> voteCache.evictOnClose(pId));
+        runAfterCommit(() -> {
+            voteCache.evictOnClose(pId);
+            // 닫힌 상태 브로드캐스트
+            voteBroadcaster.broadcastCountsSnapshot(poll);
+        });
     }
 
     @Transactional
@@ -280,7 +292,11 @@ public class PollService {
         final long pId = pollId, mId = memberId;
         final long prevOpt = myOptionId;
         final OffsetDateTime closesAt = poll.getClosesAt();
-        runAfterCommit(() -> voteCache.unvote(pId, prevOpt, mId, closesAt));
+
+        runAfterCommit(() -> {
+            voteCache.unvote(pId, prevOpt, mId, closesAt);
+            voteBroadcaster.broadcastCountsSnapshot(poll);
+        });
     }
 
     @Transactional
