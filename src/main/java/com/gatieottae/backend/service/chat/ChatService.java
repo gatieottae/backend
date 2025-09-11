@@ -1,7 +1,8 @@
 package com.gatieottae.backend.service.chat;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gatieottae.backend.api.chat.dto.ChatHistoryResponse;
+import com.gatieottae.backend.api.chat.dto.ChatMessageDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageRequestDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageResponseDto;
 import com.gatieottae.backend.domain.chat.ChatMessage;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -59,4 +61,30 @@ public class ChatService {
             Long id, Long groupId, Long senderId, String content,
             String type, java.util.List<Long> mentions, Instant sentAt
     ) {}
+
+    @Transactional(readOnly = true)
+    public ChatHistoryResponse history(Long groupId, Long beforeId, int size) {
+        int pageSize = Math.max(1, Math.min(size, 50)); // 1~50 제한
+        List<ChatMessage> rows = (beforeId == null)
+                ? chatMessageRepository.findTop50ByGroupIdOrderByIdDesc(groupId)
+                : chatMessageRepository.findTop50ByGroupIdAndIdLessThanOrderByIdDesc(groupId, beforeId);
+
+        if (rows.size() > pageSize) rows = rows.subList(0, pageSize);
+
+        var list = rows.stream().map(m -> ChatMessageDto.builder()
+                .id(m.getId())
+                .senderId(m.getSenderId())
+                .content(m.getContent())
+                .type(m.getType())
+                .mentions(m.getMentions())
+                .sentAt(m.getSentAt())
+                .build()
+        ).toList();
+
+        Long next = (list.isEmpty() ? null : list.get(list.size()-1).getId()); // desc라 마지막이 가장 오래된 id
+        return ChatHistoryResponse.builder()
+                .messages(list)
+                .nextCursor(next)
+                .build();
+    }
 }

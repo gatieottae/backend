@@ -2,7 +2,6 @@ package com.gatieottae.backend.api.chat.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
-import java.time.Instant;
 import java.util.List;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder

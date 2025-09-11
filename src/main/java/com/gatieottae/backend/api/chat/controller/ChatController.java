@@ -1,5 +1,6 @@
 package com.gatieottae.backend.api.chat.controller;
 
+import com.gatieottae.backend.api.chat.dto.ChatHistoryResponse;
 import com.gatieottae.backend.api.chat.dto.SendMessageRequestDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageResponseDto;
 import com.gatieottae.backend.service.chat.ChatService;
@@ -27,6 +28,17 @@ public class ChatController {
             @Valid @RequestBody SendMessageRequestDto req
     ) {
         var res = chatService.send(groupId, memberId, req);
+        return ResponseEntity.ok(res);
+    }
+
+    @Operation(summary = "히스토리 조회")
+    @GetMapping("/messages")
+    public ResponseEntity<ChatHistoryResponse> history(
+            @PathVariable Long groupId,
+            @RequestParam(required = false) Long beforeId,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        var res = chatService.history(groupId, beforeId, size);
         return ResponseEntity.ok(res);
     }
 }

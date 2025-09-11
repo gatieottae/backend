@@ -163,6 +163,11 @@ public class AuthService {
                 .build();
     }
 
+    public com.gatieottae.backend.domain.member.Member getMemberById(Long memberId) {
+        return memberRepository.findById(memberId)
+                .orElseThrow(() -> new com.gatieottae.backend.common.exception.BadRequestException(com.gatieottae.backend.common.exception.ErrorCode.UNAUTHORIZED, "사용자를 찾을 수 없습니다."));
+    }
+
     /* -------------------- 내부 유틸 -------------------- */
 
     private String trim(String s) {

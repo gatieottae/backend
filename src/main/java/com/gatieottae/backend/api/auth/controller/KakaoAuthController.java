@@ -69,8 +69,8 @@ public class KakaoAuthController {
         addJwtCookies(resp, result.accessToken(), result.refreshToken());
 
         // 4) 프론트로 302 리다이렉트 (홈으로 이동)
-        String frontendBase = "http://localhost:5173"; // TODO: yml로 분리(ex. oauth.kakao.frontend-redirect-base)
-        String redirect = frontendBase + "/";
+        String frontendBase = "http://localhost:5173";
+        String redirect = frontendBase + "/auth/callback";
 
         return ResponseEntity.status(302)
                 .location(URI.create(redirect))
