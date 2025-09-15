@@ -13,40 +13,60 @@ import java.util.List;
 
 @Tag(name = "Expense API", description = "지출 CRUD API")
 @RestController
-@RequestMapping("/api/expenses")
+@RequestMapping("/api")
 @RequiredArgsConstructor
 public class ExpenseController {
 
     private final ExpenseService expenseService;
 
-    @Operation(summary = "지출 등록")
-    @PostMapping
-    public ResponseEntity<ExpenseResponseDto> create(@RequestBody ExpenseRequestDto request) {
-        return ResponseEntity.ok(expenseService.createExpense(request));
-    }
-
-    @Operation(summary = "지출 단건 조회")
-    @GetMapping("/{id}")
-    public ResponseEntity<ExpenseResponseDto> get(@PathVariable Long id) {
-        return ResponseEntity.ok(expenseService.getExpense(id));
-    }
+    /* =======================
+     * RESTful (권장) 경로 – 프론트와 일치
+     * /api/groups/{groupId}/expenses[/{id}]
+     * ======================= */
 
     @Operation(summary = "그룹별 지출 목록 조회")
-    @GetMapping("/group/{groupId}")
-    public ResponseEntity<List<ExpenseResponseDto>> list(@PathVariable Long groupId) {
+    @GetMapping("/groups/{groupId}/expenses")
+    public ResponseEntity<List<ExpenseResponseDto>> listByGroup(@PathVariable Long groupId) {
         return ResponseEntity.ok(expenseService.getExpensesByGroup(groupId));
     }
 
+    @Operation(summary = "그룹에 지출 등록")
+    @PostMapping("/groups/{groupId}/expenses")
+    public ResponseEntity<ExpenseResponseDto> createUnderGroup(@PathVariable Long groupId,
+                                                               @RequestBody ExpenseRequestDto request) {
+        // DTO에 groupId 필드가 있다면 여기서 주입 (setter/builder/복사 생성자 등 프로젝트 스타일에 맞게 적용)
+        // 예: request.setGroupId(groupId);
+        return ResponseEntity.ok(expenseService.createExpense(withGroupId(request, groupId)));
+    }
+
+    @Operation(summary = "지출 단건 조회")
+    @GetMapping("/groups/{groupId}/expenses/{id}")
+    public ResponseEntity<ExpenseResponseDto> get(@PathVariable Long groupId, @PathVariable Long id) {
+        // groupId는 보안/권한 검증용으로도 활용 가능
+        return ResponseEntity.ok(expenseService.getExpense(id));
+    }
+
     @Operation(summary = "지출 수정")
-    @PutMapping("/{id}")
-    public ResponseEntity<ExpenseResponseDto> update(@PathVariable Long id, @RequestBody ExpenseRequestDto request) {
-        return ResponseEntity.ok(expenseService.updateExpense(id, request));
+    @PutMapping("/groups/{groupId}/expenses/{id}")
+    public ResponseEntity<ExpenseResponseDto> update(@PathVariable Long groupId,
+                                                     @PathVariable Long id,
+                                                     @RequestBody ExpenseRequestDto request) {
+        return ResponseEntity.ok(expenseService.updateExpense(id, withGroupId(request, groupId)));
     }
 
     @Operation(summary = "지출 삭제")
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    @DeleteMapping("/groups/{groupId}/expenses/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long groupId, @PathVariable Long id) {
         expenseService.deleteExpense(id);
         return ResponseEntity.noContent().build();
+    }
+
+
+    /* =======================
+     * 헬퍼
+     * ======================= */
+    private ExpenseRequestDto withGroupId(ExpenseRequestDto req, Long groupId) {
+        req.setGroupId(groupId);
+        return req;
     }
 }
