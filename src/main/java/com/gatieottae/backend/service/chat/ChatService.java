@@ -6,7 +6,10 @@ import com.gatieottae.backend.api.chat.dto.ChatMessageDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageRequestDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageResponseDto;
 import com.gatieottae.backend.domain.chat.ChatMessage;
+import com.gatieottae.backend.domain.group.GroupService;
 import com.gatieottae.backend.repository.chat.ChatMessageRepository;
+import com.gatieottae.backend.repository.group.GroupMemberRepository;
+import com.gatieottae.backend.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -21,8 +24,8 @@ public class ChatService {
 
     private final ChatMessageRepository chatMessageRepository;
     private final SimpMessagingTemplate messagingTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
+    private final NotificationService notificationService;
+    private final GroupMemberRepository groupMemberRepository;
     /**
      * 메시지 전송 (DB 저장 + 실시간 브로드캐스트)
      * - 요구: JWT 인증으로부터 memberId 추출 (Controller에서 주입)
@@ -36,18 +39,26 @@ public class ChatService {
                         .senderId(senderId)
                         .content(req.getContent())
                         .type(req.getType() != null ? req.getType() : "NORMAL")
-                        .mentions(req.getMentions())   // ✅ 그대로 넣기 (문자열 변환 X)
+                        .mentions(req.getMentions())
                         .build()
         );
 
-        // 브로드캐스트 페이로드(최소)
         var payload = new ChatBroadcast(
                 saved.getId(), groupId, senderId, saved.getContent(),
                 saved.getType(), req.getMentions(), saved.getSentAt()
         );
 
-        // /topic/groups/{groupId}/chat 로 전송
         messagingTemplate.convertAndSend("/topic/groups/" + groupId + "/chat", payload);
+
+        // ✅ 그룹 멤버 조회 (예: groupMemberRepository 등)
+        List<Long> memberIds = groupMemberRepository.findMemberIdsByGroupId(groupId);
+
+        // ✅ 본인 제외 후 알림 발송
+        for (Long memberId : memberIds) {
+            if (!memberId.equals(senderId)) {
+                notificationService.notifyGroupMessage(groupId, memberId, req.getContent());
+            }
+        }
 
         return SendMessageResponseDto.builder()
                 .id(saved.getId())

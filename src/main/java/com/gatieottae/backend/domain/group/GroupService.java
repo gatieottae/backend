@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional; // 스프링 트랜잭션
 import java.time.Instant;
+import java.util.List;
 
 /**
  * 그룹 관련 비즈니스 로직
