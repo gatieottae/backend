@@ -66,11 +66,10 @@ public class KakaoAuthController {
         );
 
         // 3) JWT를 HttpOnly 쿠키로 세팅 (로컬은 Secure=false, Lax로 완화)
-        addJwtCookies(resp, result.accessToken(), result.refreshToken());
-
-        // 4) 프론트로 302 리다이렉트 (홈으로 이동)
         String frontendBase = "http://localhost:5173";
-        String redirect = frontendBase + "/auth/callback";
+        String redirect = frontendBase + "/auth/callback" +
+                "?accessToken=" + result.accessToken() +
+                "&refreshToken=" + result.refreshToken();
 
         return ResponseEntity.status(302)
                 .location(URI.create(redirect))
@@ -114,27 +113,6 @@ public class KakaoAuthController {
             }
         } catch (Exception ignored) {}
         return null;
-    }
-
-    // KakaoAuthController (콜백 내부에서 토큰 발급 직후)
-    private void addJwtCookies(HttpServletResponse resp, String access, String refresh) {
-        Cookie at = new Cookie("accessToken", access);
-        at.setHttpOnly(true);
-        at.setPath("/");                // 모든 경로에서 보이도록
-        at.setMaxAge(60 * 60);         // 예시 1h
-        // 로컬 개발: Lax + Secure=false (http에서도 전송)
-        at.setSecure(false);
-        at.setAttribute("SameSite", "Lax");
-
-        Cookie rt = new Cookie("refreshToken", refresh);
-        rt.setHttpOnly(true);
-        rt.setPath("/api/auth");       // 리프레시 엔드포인트 범위 정도로 제한 권장
-        rt.setMaxAge(60 * 60 * 24 * 14);
-        rt.setSecure(false);
-        rt.setAttribute("SameSite", "Lax");
-
-        resp.addCookie(at);
-        resp.addCookie(rt);
     }
 
     // ===== util =====
