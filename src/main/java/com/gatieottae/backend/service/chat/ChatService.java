@@ -52,11 +52,10 @@ public class ChatService {
 
         // ✅ 그룹 멤버 조회 (예: groupMemberRepository 등)
         List<Long> memberIds = groupMemberRepository.findMemberIdsByGroupId(groupId);
-
         // ✅ 본인 제외 후 알림 발송
         for (Long memberId : memberIds) {
             if (!memberId.equals(senderId)) {
-                notificationService.notifyGroupMessage(groupId, memberId, req.getContent());
+                notificationService.notifyUserGroupMessage(memberId, groupId, senderId, saved.getContent());
             }
         }
 

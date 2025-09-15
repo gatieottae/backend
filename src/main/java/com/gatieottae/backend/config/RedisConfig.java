@@ -1,5 +1,10 @@
 package com.gatieottae.backend.config;
 
+import com.gatieottae.backend.infra.notification.NotificationTopics;
+import com.gatieottae.backend.infra.notification.RedisNotificationSubscriber;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.PatternTopic;
+import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -47,5 +52,14 @@ public class RedisConfig {
         var container = new RedisMessageListenerContainer();
         container.setConnectionFactory(cf);
         return container;
+    }
+
+    @Bean
+    public boolean registerNotificationSubscriber(
+            RedisMessageListenerContainer container,
+            RedisNotificationSubscriber redisNotificationSubscriber
+    ) {
+        container.addMessageListener(redisNotificationSubscriber, new PatternTopic(NotificationTopics.PATTERN_ALL));
+        return true;
     }
 }

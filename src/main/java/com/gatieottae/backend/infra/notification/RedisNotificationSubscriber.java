@@ -1,7 +1,10 @@
 package com.gatieottae.backend.infra.notification;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gatieottae.backend.api.notification.dto.NotificationPayloadDto;
+import com.gatieottae.backend.domain.member.Member;
+import com.gatieottae.backend.repository.member.MemberRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,13 +22,14 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class RedisNotificationSubscriber implements MessageListener {
 
-    private final RedisMessageListenerContainer container; // ✅ RedisConfig 에서 제공
+    private final RedisMessageListenerContainer container;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper om;
+    private final MemberRepository memberRepository;
 
     @PostConstruct
     void subscribe() {
-        container.addMessageListener(this, new PatternTopic(NotificationTopics.PATTERN_ALL));
+        container.addMessageListener(this, new PatternTopic(NotificationTopics.PATTERN_ALL)); // "notif:*"
         log.info("[Notif] Subscribed to {}", NotificationTopics.PATTERN_ALL);
     }
 
@@ -35,23 +39,22 @@ public class RedisNotificationSubscriber implements MessageListener {
             final String channel = new String(message.getChannel(), StandardCharsets.UTF_8);
             final String json    = new String(message.getBody(), StandardCharsets.UTF_8);
 
-            // JSON → DTO
             NotificationPayloadDto payload = om.readValue(json, NotificationPayloadDto.class);
 
-            // 채널 라우팅: 그룹 or 유저
             if (channel.startsWith("notif:group:")) {
                 Long groupId = Long.parseLong(channel.substring("notif:group:".length()));
-                // 그룹 구독자 모두에게 브로드캐스트
                 String dest = "/topic/groups/" + groupId + "/notifications";
+                log.info("[Notif] SEND_TO_GROUP {} {}", groupId, dest);
                 messagingTemplate.convertAndSend(dest, payload);
+
             } else if (channel.startsWith("notif:user:")) {
                 Long memberId = Long.parseLong(channel.substring("notif:user:".length()));
-                // 개별 유저 큐(유저 전용 큐 사용)
-                String dest = "/user/" + memberId + "/queue/notifications";
+                String dest = "/topic/notifications/" + memberId;
+                log.info("[Notif] STOMP SEND {}", dest);
                 messagingTemplate.convertAndSend(dest, payload);
             }
         } catch (Exception e) {
-            log.debug("[Notif] failed handle pubsub: {}", e.toString());
+            log.warn("[Notif] failed handle pubsub", e);
         }
     }
 }
