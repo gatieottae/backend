@@ -2,6 +2,7 @@ package com.gatieottae.backend.api.auth.controller;
 
 import com.gatieottae.backend.api.auth.dto.LoginDto;
 import com.gatieottae.backend.api.auth.dto.SignupDto;
+import com.gatieottae.backend.security.jwt.JwtTokenProvider;
 import com.gatieottae.backend.service.auth.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -12,9 +13,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 import com.gatieottae.backend.api.auth.dto.RefreshDto;
+import com.gatieottae.backend.domain.member.Member;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Tag(name = "Auth", description = "인증/회원가입/로그인 API")
 @RestController
@@ -23,6 +29,7 @@ import com.gatieottae.backend.api.auth.dto.RefreshDto;
 public class AuthController {
 
     private final AuthService authService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Operation(
             summary = "회원가입",
@@ -82,6 +89,24 @@ public class AuthController {
                 svc.getAccessToken(),
                 svc.getRefreshToken()
         );
+        return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/token")
+    public ResponseEntity<
+            Map<String, String>> issueTokenFromCookie(
+            @AuthenticationPrincipal(expression = "id") Long userId
+    ) {
+        // 쿠키 기반 인증이 이미 통과한 상태라면 userId가 들어옴
+        if (userId == null) return ResponseEntity.status(401).build();
+
+        Member user = authService.getMemberById(userId);
+        String access = jwtTokenProvider.generateAccessToken(user.getUsername(), user.getId());
+        String refresh = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+
+        Map<String, String> body = new HashMap<>();
+        body.put("accessToken", access);
+        body.put("refreshToken", refresh);
         return ResponseEntity.ok(body);
     }
 }

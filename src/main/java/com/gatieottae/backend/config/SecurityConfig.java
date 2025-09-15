@@ -58,6 +58,7 @@ public class SecurityConfig {
                 .requestMatchers(
                         "/api/auth/kakao/login-url",
                         "/api/auth/kakao/callback",
+                        "/api/auth/token",
                         "/api/ping",
                         "/actuator/health",
                         "/actuator/info",

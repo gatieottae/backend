@@ -21,24 +21,15 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class VoteRedisSubscriber implements MessageListener {
 
+    private final RedisMessageListenerContainer container; // ✅ RedisConfig 에서 제공
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper om;
 
-    /**
-     * RedisMessageListenerContainer 등록:
-     * - "polls:*" 패턴으로 모든 투표 업데이트 수신
-     */
-    @Bean
-    public RedisMessageListenerContainer redisMessageListenerContainer(RedisConnectionFactory cf) {
-        var container = new RedisMessageListenerContainer();
-        container.setConnectionFactory(cf);
-        container.addMessageListener(this, new PatternTopic("polls:*"));
-        return container;
-    }
-
     @PostConstruct
-    void ready() {
-        log.info("VoteRedisSubscriber is ready. Subscribed to topic 'polls:*'");
+    void subscribe() {
+        // "polls:*" 패턴 구독 등록
+        container.addMessageListener(this, new PatternTopic("polls:*"));
+        log.info("VoteRedisSubscriber subscribed to topic 'polls:*'");
     }
 
     /**

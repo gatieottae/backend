@@ -71,6 +71,9 @@ dependencies {
     // 메시지 보안
     implementation "org.springframework.security:spring-security-messaging"
 
+    // Flyway
+    implementation "org.flywaydb:flyway-core:10.22.0"
+    implementation "org.flywaydb:flyway-database-postgresql:10.22.0"
 }
 
 tasks.named('test') {

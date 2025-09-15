@@ -11,7 +11,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     // 구독 경로(/topic/**)는 심플 브로커로 라우팅
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/topic");
+        config.enableSimpleBroker("/topic", "/queue");
         // 클라이언트 → 서버(@MessageMapping) 목적지 prefix
         config.setApplicationDestinationPrefixes("/app");
     }
