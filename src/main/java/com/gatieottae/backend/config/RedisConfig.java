@@ -2,9 +2,7 @@ package com.gatieottae.backend.config;
 
 import com.gatieottae.backend.infra.notification.NotificationTopics;
 import com.gatieottae.backend.infra.notification.RedisNotificationSubscriber;
-import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.PatternTopic;
-import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;

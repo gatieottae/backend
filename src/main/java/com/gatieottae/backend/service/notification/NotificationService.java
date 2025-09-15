@@ -30,18 +30,4 @@ public class NotificationService {
         log.info("[Notif] PUBLISH notif:user:{} -> group {}", receiverId, groupId);
         publisher.publishToUser(receiverId, payload);
     }
-
-    /** 일반 개인 알림 */
-    public void notifyUser(Long memberId, String title, String message, String link) {
-        var payload = NotificationPayloadDto.builder()
-                .type("GENERAL")
-                .receiverId(memberId)
-                .title(title)
-                .message(message)
-                .link(link)
-                .sentAt(OffsetDateTime.now().toString())
-                .build();
-
-        publisher.publishToUser(memberId, payload);
-    }
 }

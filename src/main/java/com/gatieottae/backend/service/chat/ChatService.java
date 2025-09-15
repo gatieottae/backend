@@ -1,12 +1,10 @@
 package com.gatieottae.backend.service.chat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gatieottae.backend.api.chat.dto.ChatHistoryResponse;
 import com.gatieottae.backend.api.chat.dto.ChatMessageDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageRequestDto;
 import com.gatieottae.backend.api.chat.dto.SendMessageResponseDto;
 import com.gatieottae.backend.domain.chat.ChatMessage;
-import com.gatieottae.backend.domain.group.GroupService;
 import com.gatieottae.backend.repository.chat.ChatMessageRepository;
 import com.gatieottae.backend.repository.group.GroupMemberRepository;
 import com.gatieottae.backend.service.notification.NotificationService;

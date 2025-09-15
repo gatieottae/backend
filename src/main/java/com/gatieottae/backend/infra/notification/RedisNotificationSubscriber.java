@@ -1,9 +1,7 @@
 package com.gatieottae.backend.infra.notification;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gatieottae.backend.api.notification.dto.NotificationPayloadDto;
-import com.gatieottae.backend.domain.member.Member;
 import com.gatieottae.backend.repository.member.MemberRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +23,6 @@ public class RedisNotificationSubscriber implements MessageListener {
     private final RedisMessageListenerContainer container;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper om;
-    private final MemberRepository memberRepository;
 
     @PostConstruct
     void subscribe() {

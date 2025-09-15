@@ -13,10 +13,6 @@ public class RedisNotificationPublisher {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper om;
 
-    public void publishToGroup(Long groupId, NotificationPayloadDto payload) {
-        publish(NotificationTopics.groupTopic(groupId), payload);
-    }
-
     public void publishToUser(Long memberId, NotificationPayloadDto payload) {
         publish(NotificationTopics.userTopic(memberId), payload);
     }

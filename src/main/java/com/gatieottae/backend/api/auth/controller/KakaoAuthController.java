@@ -3,20 +3,15 @@ package com.gatieottae.backend.api.auth.controller;
 import com.gatieottae.backend.config.KakaoOAuthProperties;
 import com.gatieottae.backend.service.auth.oauth.SocialAuthService;
 import com.gatieottae.backend.service.oauth.KakaoOAuthClient;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Map;
-import java.util.LinkedHashMap;
 
 /**
  * 임시 테스트 단계(3단계)
