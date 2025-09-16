@@ -20,5 +20,6 @@ public class SettlementResponseDto {
         private Long fromMemberId;  // 보낼 사람(채무자)
         private Long toMemberId;    // 받을 사람(채권자)
         private Long amount;        // 원 단위
+        private Long expenseId;     // 관련 지출 ID
     }
 }

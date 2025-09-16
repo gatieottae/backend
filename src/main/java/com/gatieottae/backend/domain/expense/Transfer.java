@@ -33,6 +33,9 @@ public class Transfer {
     @Column(name = "to_member_id", nullable = false)
     private Long toMemberId;
 
+    @Column(name = "expense_id")
+    private Long expenseId;
+
     /** 송금 금액(원 단위) */
     @Column(nullable = false)
     private Long amount;
@@ -54,4 +57,12 @@ public class Transfer {
     /** DB trigger(now()) */
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
+
+    public void rollback() {
+        if (this.status == TransferStatus.CONFIRMED) {
+            throw new IllegalStateException("확정된 송금은 롤백할 수 없습니다.");
+        }
+        this.status = TransferStatus.ROLLED_BACK;
+        this.updatedAt = OffsetDateTime.now();
+    }
 }

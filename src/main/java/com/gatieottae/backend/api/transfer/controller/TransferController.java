@@ -1,20 +1,18 @@
 package com.gatieottae.backend.api.transfer.controller;
 
 import com.gatieottae.backend.api.transfer.dto.*;
+import com.gatieottae.backend.security.auth.LoginMember;
 import com.gatieottae.backend.service.transfer.TransferService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * 인증은 간단히 actorMemberId를 헤더로 받는 예시.
- * 실전에서는 SecurityContext/JWT로 대체.
- */
 @Tag(name = "Transfer API", description = "송금 상태 전이/증빙 API")
 @RestController
 @RequestMapping("/api/transfers")
@@ -34,7 +32,7 @@ public class TransferController {
     @Operation(summary = "보냈어요")
     @PostMapping("/{id}/send")
     public ResponseEntity<TransferResponseDto> send(
-            @RequestHeader("X-Actor-MemberId") Long actorMemberId,
+            @AuthenticationPrincipal(expression = "id") Long actorMemberId,
             @RequestParam Long groupId,
             @PathVariable Long id,
             @RequestBody(required = false) TransferActionRequestDto body
@@ -45,7 +43,7 @@ public class TransferController {
     @Operation(summary = "받았어요(확인)")
     @PostMapping("/{id}/confirm")
     public ResponseEntity<TransferResponseDto> confirm(
-            @RequestHeader("X-Actor-MemberId") Long actorMemberId,
+            @AuthenticationPrincipal(expression = "id") Long actorMemberId,
             @RequestParam Long groupId,
             @PathVariable Long id,
             @RequestBody(required = false) TransferActionRequestDto body
@@ -56,23 +54,47 @@ public class TransferController {
     @Operation(summary = "송금 롤백")
     @PostMapping("/{id}/rollback")
     public ResponseEntity<TransferResponseDto> rollback(
-            @RequestHeader("X-Actor-MemberId") Long actorMemberId,
-            @RequestHeader(value = "X-Actor-Admin", defaultValue = "false") boolean isAdmin,
             @RequestParam Long groupId,
             @PathVariable Long id,
+            @AuthenticationPrincipal LoginMember loginMember,
             @RequestBody(required = false) TransferActionRequestDto body
     ) {
-        return ResponseEntity.ok(transferService.rollback(groupId, id, actorMemberId, body, isAdmin));
+        Long actorMemberId = loginMember.getId();
+        boolean isAdmin = loginMember.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        return ResponseEntity.ok(
+                transferService.rollback(groupId, id, actorMemberId, body, isAdmin)
+        );
     }
 
     @Operation(summary = "증빙 첨부/수정")
     @PostMapping("/{id}/proof")
     public ResponseEntity<TransferResponseDto> attachProof(
-            @RequestHeader("X-Actor-MemberId") Long actorMemberId,
+            @AuthenticationPrincipal(expression = "id") Long actorMemberId,
             @RequestParam Long groupId,
             @PathVariable Long id,
             @RequestBody TransferProofRequestDto body
     ) {
         return ResponseEntity.ok(transferService.attachProof(groupId, id, actorMemberId, body));
+    }
+
+    @Operation(summary = "보채기")
+    @PostMapping("/{id}/nudge")
+    public ResponseEntity<Void> nudge(
+            @AuthenticationPrincipal(expression = "id") Long actorMemberId,
+            @RequestParam Long groupId,
+            @PathVariable Long id
+    ) {
+        transferService.nudge(groupId, id, actorMemberId); // 구현은 자유
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/groups/{groupId}/transfers/me")
+    public List<TransferResponseDto> getMyTransfers(
+            @PathVariable Long groupId,
+            @AuthenticationPrincipal(expression = "id") Long actorMemberId
+    ) {
+        return transferService.getTransfersForMember(groupId, actorMemberId);
     }
 }
