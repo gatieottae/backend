@@ -22,6 +22,7 @@ public class TransferCommitRequestDto {
         @NotNull private Long fromMemberId;
         @NotNull private Long toMemberId;
         @NotNull @Min(1) private Long amount;
-        private String memo; // 선택
+        private String memo;
+        private Long expenseId;
     }
 }

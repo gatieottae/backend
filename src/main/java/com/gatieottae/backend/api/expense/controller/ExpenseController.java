@@ -57,7 +57,7 @@ public class ExpenseController {
     @Operation(summary = "지출 삭제")
     @DeleteMapping("/groups/{groupId}/expenses/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long groupId, @PathVariable Long id) {
-        expenseService.deleteExpense(id);
+        expenseService.deleteExpense(groupId, id);
         return ResponseEntity.noContent().build();
     }
 

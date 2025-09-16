@@ -2,9 +2,14 @@ package com.gatieottae.backend.service.expense;
 
 import com.gatieottae.backend.api.expense.dto.ExpenseRequestDto;
 import com.gatieottae.backend.api.expense.dto.ExpenseResponseDto;
+import com.gatieottae.backend.common.exception.ConflictException;
 import com.gatieottae.backend.domain.expense.Expense;
 import com.gatieottae.backend.domain.expense.ExpenseShare;
+import com.gatieottae.backend.domain.expense.Transfer;
+import com.gatieottae.backend.domain.expense.TransferStatus;
 import com.gatieottae.backend.repository.expense.ExpenseRepository;
+import com.gatieottae.backend.repository.expense.TransferRepository;
+import com.gatieottae.backend.service.notification.NotificationService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +25,8 @@ import java.util.stream.Collectors;
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final TransferRepository transferRepository;
+    private final NotificationService notificationService;
 
     public ExpenseResponseDto createExpense(ExpenseRequestDto request) {
         // 1. 분담금 합계 검증
@@ -88,8 +95,28 @@ public class ExpenseService {
         return toResponse(expense);
     }
 
-    public void deleteExpense(Long id) {
-        expenseRepository.deleteById(id);
+    public void deleteExpense(Long groupId, Long expenseId) {
+        Expense expense = expenseRepository.findByIdAndGroupId(expenseId, groupId)
+                .orElseThrow(() -> new EntityNotFoundException("Expense not found"));
+
+        // 1) 이미 확정된 송금이 하나라도 있으면 삭제 불가
+        if (transferRepository.existsByExpenseIdAndStatus(expenseId, TransferStatus.CONFIRMED)) {
+            throw new ConflictException("이미 정산에 포함된 지출은 삭제할 수 없습니다.");
+        }
+
+        // 2) 확정되지 않은 모든 관련 송금 내역 조회
+        List<Transfer> transfersToDelete = transferRepository.findByExpenseIdAndStatusIn(
+                expenseId,
+                List.of(TransferStatus.REQUESTED, TransferStatus.SENT, TransferStatus.CANCELED, TransferStatus.ROLLED_BACK)
+        );
+
+        // 3) 관련 송금 내역 삭제
+        if (!transfersToDelete.isEmpty()) {
+            transferRepository.deleteAll(transfersToDelete);
+        }
+
+        // 4) 지출 삭제
+        expenseRepository.delete(expense);
     }
 
     private ExpenseResponseDto toResponse(Expense e) {
