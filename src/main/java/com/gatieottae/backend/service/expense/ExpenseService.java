@@ -58,6 +58,12 @@ public class ExpenseService {
 
         // 3. 저장
         Expense saved = expenseRepository.save(expense);
+
+        // 그룹 브로드캐스트
+        notificationService.notifyExpenseCreated(
+                saved.getGroupId(), saved.getId(), saved.getTitle(), saved.getAmount(), saved.getPaidBy()
+        );
+
         return toResponse(saved);
     }
 
@@ -92,6 +98,11 @@ public class ExpenseService {
                 )
         );
 
+        // 그룹 브로드캐스트
+        notificationService.notifyExpenseUpdated(
+                expense.getGroupId(), expense.getId(), expense.getTitle(), expense.getAmount()
+        );
+
         return toResponse(expense);
     }
 
@@ -114,6 +125,9 @@ public class ExpenseService {
         if (!transfersToDelete.isEmpty()) {
             transferRepository.deleteAll(transfersToDelete);
         }
+
+        // 그룹 브로드캐스트
+        notificationService.notifyExpenseDeleted(groupId, expenseId);
 
         // 4) 지출 삭제
         expenseRepository.delete(expense);

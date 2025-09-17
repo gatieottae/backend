@@ -63,17 +63,70 @@ public class NotificationService {
     }
 
     /** 수신자가 '받았어요(확인)' 했을 때 → 송금자에게 알림 */
-    public void notifyConfirmed(Long fromMemberId, Long id, Long amount) {
+    public void notifyConfirmed(Long fromMemberId, Long transferId, Long amount, Long groupId) {
         var payload = NotificationPayloadDto.builder()
                 .type("TRANSFER_CONFIRMED")
                 .receiverId(fromMemberId)
+                .groupId(groupId)
+                .transferId(transferId)
                 .title("입금 확인")
-                .message(String.format("상대가 %d원 입금을 확인했습니다. (송금ID: %d)", amount, id))
+                .message(String.format("상대가 %d원 입금을 확인했습니다. (송금ID: %d)", amount, transferId))
                 .sentAt(OffsetDateTime.now().toString())
                 .build();
 
-        log.info("[Notif] PUBLISH transfer confirmed -> to sender: {}, transferId: {}", fromMemberId, id);
+        log.info("[Notif] PUBLISH transfer confirmed -> to sender: {}, transferId: {}", fromMemberId, transferId);
         publisher.publishToUser(fromMemberId, payload);
+    }
+
+    // 공통 지출 이벤트 브로드캐스트
+    public void notifyExpenseEvent(Long groupId, String type, String title, String message) {
+        var payload = NotificationPayloadDto.builder()
+                .type(type)                 // "EXPENSE_CREATED" / "EXPENSE_UPDATED" / "EXPENSE_DELETED"
+                .groupId(groupId)
+                .title(title)
+                .message(message)
+                .sentAt(OffsetDateTime.now().toString())
+                .build();
+
+        log.info("[Notif] PUBLISH expense event -> group: {}, type: {}", groupId, type);
+        publisher.publishToGroup(groupId, payload);
+    }
+
+    // 지출 생성/삭제/수정 브로드캐스트(그룹 채널)
+    public void notifyExpenseCreated(Long groupId, Long expenseId, String title, Long amount, Long paidBy) {
+        var payload = NotificationPayloadDto.builder()
+                .type("EXPENSE_CREATED")
+                .groupId(groupId)
+                .title("지출 추가")
+                .message(String.format("%s: %d원 등록", title, amount))
+                .link("/groups/" + groupId + "/expenses")
+                .sentAt(OffsetDateTime.now().toString())
+                .build();
+        publisher.publishToGroup(groupId, payload);
+    }
+
+    public void notifyExpenseDeleted(Long groupId, Long expenseId) {
+        var payload = NotificationPayloadDto.builder()
+                .type("EXPENSE_DELETED")
+                .groupId(groupId)
+                .title("지출 삭제")
+                .message("지출이 삭제되었습니다.")
+                .link("/groups/" + groupId + "/expenses")
+                .sentAt(OffsetDateTime.now().toString())
+                .build();
+        publisher.publishToGroup(groupId, payload);
+    }
+
+    public void notifyExpenseUpdated(Long groupId, Long expenseId, String title, Long amount) {
+        var payload = NotificationPayloadDto.builder()
+                .type("EXPENSE_UPDATED")
+                .groupId(groupId)
+                .title("지출 수정")
+                .message(String.format("%s: %d원으로 변경", title, amount))
+                .link("/groups/" + groupId + "/expenses")
+                .sentAt(OffsetDateTime.now().toString())
+                .build();
+        publisher.publishToGroup(groupId, payload);
     }
 
     /**

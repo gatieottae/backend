@@ -8,6 +8,7 @@ import com.gatieottae.backend.service.notification.NotificationService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,57 +43,41 @@ public class TransferService {
      * 송금 초안 확정(배치 생성, 멱등).
      * - 동일 (groupId, from, to)에 대해 진행중(REQUESTED/SENT) 건이 있으면 기존 건 반환.
      */
+
+    @Transactional
     public List<TransferResponseDto> commitDrafts(TransferCommitRequestDto req) {
-        Objects.requireNonNull(req, "request is null");
-        Objects.requireNonNull(req.getGroupId(), "groupId is null");
+        Long groupId = req.getGroupId();
+        List<TransferResponseDto> out = new ArrayList<>();
 
-        final Long groupId = req.getGroupId();
-        final List<TransferCommitRequestDto.Item> items =
-                req.getItems() != null ? req.getItems() : List.of();
+        for (TransferCommitRequestDto.Item it : req.getItems()) {
+            // 기본 검증
+            if (it.getExpenseId() == null) throw new IllegalArgumentException("expenseId required");
+            if (Objects.equals(it.getFromMemberId(), it.getToMemberId()))
+                throw new IllegalArgumentException("self transfer not allowed");
+            if (it.getAmount() == null || it.getAmount() <= 0)
+                throw new IllegalArgumentException("amount must be > 0");
 
-        if (items.isEmpty()) return List.of();
-
-        List<TransferResponseDto> result = new ArrayList<>(items.size());
-
-        for (TransferCommitRequestDto.Item item : items) {
-            validateDraftItem(item);
-
-            // 진행중 중복 여부
-            long dup = transferRepository.countByGroupIdAndFromMemberIdAndToMemberIdAndStatusIn(
-                    groupId, item.getFromMemberId(), item.getToMemberId(),
-                    List.of(TransferStatus.REQUESTED, TransferStatus.SENT)
-            );
-
-            if (dup > 0) {
-                // 가장 최근 진행중 1건 반환
-                Transfer existing = transferRepository
-                        .findFirstByGroupIdAndFromMemberIdAndToMemberIdAndStatusInOrderByCreatedAtDesc(
-                                groupId, item.getFromMemberId(), item.getToMemberId(),
-                                List.of(TransferStatus.REQUESTED, TransferStatus.SENT)
-                        )
-                        .orElseThrow(() -> new IllegalStateException("진행중 건 집계와 조회가 불일치합니다."));
-                result.add(TransferResponseDto.fromEntity(existing));
-                continue;
-            }
-
-            // 신규 생성
             Transfer t = Transfer.builder()
                     .groupId(groupId)
-                    .fromMemberId(item.getFromMemberId())
-                    .toMemberId(item.getToMemberId())
-                    .amount(item.getAmount())
+                    .expenseId(it.getExpenseId())      // ★ 지출 단위로 고정
+                    .fromMemberId(it.getFromMemberId())
+                    .toMemberId(it.getToMemberId())
+                    .amount(it.getAmount())
                     .status(TransferStatus.REQUESTED)
-                    .memo(item.getMemo())
+                    .memo(it.getMemo())
                     .createdAt(OffsetDateTime.now())
                     .updatedAt(OffsetDateTime.now())
-                    .expenseId(item.getExpenseId())
                     .build();
-
-            Transfer saved = transferRepository.save(t);
-            result.add(TransferResponseDto.fromEntity(saved));
+            try {
+                out.add(TransferResponseDto.fromEntity(transferRepository.save(t)));
+            } catch (DataIntegrityViolationException e) {
+                // 이미 같은 expense에서 같은 (from→to)가 존재하면 기존 걸 돌려주기(멱등)
+                transferRepository.findFirstByExpenseIdAndFromMemberIdAndToMemberId(
+                        it.getExpenseId(), it.getFromMemberId(), it.getToMemberId()
+                ).ifPresent(existing -> out.add(TransferResponseDto.fromEntity((Transfer) existing)));
+            }
         }
-
-        return result;
+        return out;
     }
 
     /**
@@ -150,7 +135,7 @@ public class TransferService {
         t.setUpdatedAt(OffsetDateTime.now());
 
         // 송금자에게 알림
-        notificationService.notifyConfirmed(t.getFromMemberId(), t.getId(), t.getAmount());
+        notificationService.notifyConfirmed(t.getFromMemberId(), t.getId(), t.getAmount(), groupId);
 
         return TransferResponseDto.fromEntity(t);
     }
