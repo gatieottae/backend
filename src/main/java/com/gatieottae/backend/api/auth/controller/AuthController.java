@@ -2,8 +2,10 @@ package com.gatieottae.backend.api.auth.controller;
 
 import com.gatieottae.backend.api.auth.dto.LoginDto;
 import com.gatieottae.backend.api.auth.dto.SignupDto;
+import com.gatieottae.backend.api.auth.dto.UpdateMeRequestDto;
 import com.gatieottae.backend.security.jwt.JwtTokenProvider;
 import com.gatieottae.backend.service.auth.AuthService;
+import com.gatieottae.backend.service.auth.MeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -13,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -30,6 +33,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final MeService meService;
 
     @Operation(
             summary = "회원가입",
@@ -109,4 +113,23 @@ public class AuthController {
         body.put("refreshToken", refresh);
         return ResponseEntity.ok(body);
     }
+
+    @Operation(summary = "내 정보 수정(이름)")
+    @PutMapping("/me")
+    public ResponseEntity<?> updateMe(Authentication authentication, @Valid @RequestBody UpdateMeRequestDto req) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "code", "UNAUTHORIZED",
+                    "status", 401,
+                    "message", "로그인이 필요합니다."
+            ));
+        }
+        String username = authentication.getName();
+        Member updated = meService.updateName(username, req.name());
+        return ResponseEntity.ok(new MeResponse(updated.getId(), updated.getUsername(), updated.getName(), updated.getNickname(), updated.getEmail()));
+    }
+
+    public record MeResponse(Long id, String username, String name, String nickname, String email) {}
+    // UpdateMeRequest는 위에서 정의한 record 사용
 }
