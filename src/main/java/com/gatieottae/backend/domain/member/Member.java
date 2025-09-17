@@ -14,13 +14,13 @@ import java.time.OffsetDateTime;
  * - username/password 기반의 로컬 회원가입
  * - email은 선택(Nullable)
  * - createdAt/updatedAt은 BaseTimeEntity에서 자동 세팅
- *
  * ⚠️ 유니크 제약
  * - username: DB/JPA 모두 유니크
  * - email: "값이 있을 때만 유니크"는 DB 파셜 인덱스로 처리 (JPA @Table uniqueConstraints로는 표현 불가)
  */
 
 @Getter
+@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // JPA 프록시용
 @AllArgsConstructor(access = AccessLevel.PRIVATE)  // 빌더 전용
 @Builder
@@ -143,4 +143,7 @@ public class Member extends BaseTimeEntity {
         this.lastLoginAt = (at == null) ? OffsetDateTime.now() : at;
     }
 
+    public void changeName(String newName) {
+        this.name = newName;
+    }
 }
